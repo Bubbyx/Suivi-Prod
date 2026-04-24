@@ -1,0 +1,17 @@
+{
+  "name": "Suivi Production",
+  "identifier": "com.bubby.suiviproduction.source",
+  "apps": [
+    {
+      "name": "Suivi Production",
+      "bundleIdentifier": "com.bubby.SuiviProduction",
+      "developerName": "Bubby",
+      "version": "1.0",
+      "versionDate": "2026-04-24",
+      "versionDescription": "Version initiale",
+      "downloadURL": "LIEN_IPA_ICI",
+      "localizedDescription": "Suivi de production",
+      "size": 5000000
+    }
+  ]
+}
