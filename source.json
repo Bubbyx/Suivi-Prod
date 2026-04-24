@@ -10,6 +10,7 @@
       "versionDate": "2026-04-24",
       "versionDescription": "Version initiale",
       "downloadURL": "https://github.com/Bubbyx/Suivi-Prod/releases/download/v1.0/Payload.ipa",
+      "iconURL": "https://cdn.altstore.io/file/altstore/apps/altstore/1_5_0/icon.png",
       "localizedDescription": "Suivi de production",
       "size": 5000000
     }
