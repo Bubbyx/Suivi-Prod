@@ -1,0 +1,13 @@
+{
+  "name": "Suivi Production",
+  "short_name": "SuiviProd",
+  "description": "Suivi de production EuroSilicone",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#007AFF",
+  "theme_color": "#007AFF",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
