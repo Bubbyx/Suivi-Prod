@@ -11,93 +11,71 @@
   <link rel="icon" href="icon.svg" />
   <style>
     :root {
-      --blue:    #007AFF;
-      --green:   #34C759;
-      --orange:  #FF9500;
-      --red:     #FF3B30;
-      --purple:  #AF52DE;
-      --teal:    #5AC8FA;
-      --bg:      #F2F2F7;
-      --card:    #FFFFFF;
-      --text:    #000000;
-      --secondary: #8E8E93;
-      --sep:     #C6C6C8;
+      --blue:   #007AFF; --green:  #34C759; --orange: #FF9500;
+      --red:    #FF3B30; --purple: #AF52DE; --teal:   #5AC8FA;
+      --bg:     #F2F2F7; --card:   #FFFFFF; --text:   #000000;
+      --secondary: #8E8E93; --sep: #C6C6C8;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100dvh;
-      overflow: hidden;
+      background: var(--bg); color: var(--text);
+      height: 100dvh; overflow: hidden;
     }
 
-    /* ── LOGIN ───────────────────────────────── */
+    /* ── AUTH ─────────────────────────────── */
     #login-screen, #change-password-screen {
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       height: 100dvh; padding: 32px;
     }
     #change-password-screen { display: none; }
-
     .auth-header { text-align: center; margin-bottom: 44px; }
     .auth-header h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; }
     .auth-header p  { font-size: 17px; color: var(--secondary); margin-top: 4px; }
-
     .auth-form { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 12px; }
     .auth-form input {
       width: 100%; padding: 15px 16px;
       border: 1px solid var(--sep); border-radius: 12px;
       font-size: 17px; background: var(--card);
-      outline: none; appearance: none;
-      transition: border-color 0.15s;
+      outline: none; appearance: none; transition: border-color .15s;
     }
     .auth-form input:focus { border-color: var(--blue); }
     .auth-error { color: var(--red); font-size: 14px; text-align: center; min-height: 18px; }
 
-    /* ── BUTTONS ─────────────────────────────── */
+    /* ── BUTTONS ──────────────────────────── */
     .btn-primary {
       width: 100%; padding: 16px;
       background: var(--blue); color: #fff;
       border: none; border-radius: 14px;
       font-size: 17px; font-weight: 600;
-      cursor: pointer; transition: opacity 0.15s;
+      cursor: pointer; transition: opacity .15s;
     }
-    .btn-primary:disabled { opacity: 0.35; }
-    .btn-primary:active   { opacity: 0.75; }
+    .btn-primary:disabled { opacity: .35; }
+    .btn-primary:active   { opacity: .75; }
     .btn-danger {
       width: 100%; padding: 16px;
-      background: rgba(255,59,48,0.1); color: var(--red);
+      background: rgba(255,59,48,.1); color: var(--red);
       border: none; border-radius: 14px;
-      font-size: 17px; font-weight: 600;
-      cursor: pointer; margin-top: 8px;
+      font-size: 17px; font-weight: 600; cursor: pointer;
     }
-    .btn-danger:active { opacity: 0.7; }
+    .btn-danger:active { opacity: .7; }
 
-    /* ── APP SHELL ───────────────────────────── */
+    /* ── APP ──────────────────────────────── */
     #app { display: none; flex-direction: column; height: 100dvh; }
-
     header {
-      background: var(--card);
-      border-bottom: 1px solid var(--sep);
-      padding: 12px 16px;
-      padding-top: calc(12px + env(safe-area-inset-top));
-      display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0;
+      background: var(--card); border-bottom: 1px solid var(--sep);
+      padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top));
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
-    header h1   { font-size: 20px; font-weight: 700; }
+    header h1 { font-size: 20px; font-weight: 700; }
     #header-visa { font-size: 13px; font-weight: 600; color: var(--secondary); }
-
     main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
-    /* ── NAV ─────────────────────────────────── */
+    /* ── NAV ──────────────────────────────── */
     nav {
-      background: var(--card);
-      border-top: 1px solid var(--sep);
-      display: flex;
-      padding-bottom: env(safe-area-inset-bottom);
-      flex-shrink: 0;
+      background: var(--card); border-top: 1px solid var(--sep);
+      display: flex; padding-bottom: env(safe-area-inset-bottom); flex-shrink: 0;
     }
     nav button {
       flex: 1; border: none; background: transparent;
@@ -108,38 +86,30 @@
     nav button.active { color: var(--blue); }
     nav button svg { width: 24px; height: 24px; }
 
-    /* ── TABS ────────────────────────────────── */
-    .tab-page          { display: none; padding: 12px 14px 24px; }
-    .tab-page.active   { display: block; }
+    /* ── TABS ─────────────────────────────── */
+    .tab-page        { display: none; padding: 12px 14px 28px; }
+    .tab-page.active { display: block; }
 
-    /* ── CARD ────────────────────────────────── */
-    .card { background: var(--card); border-radius: 16px; padding: 14px 14px 10px; margin-bottom: 12px; }
+    /* ── CARD ─────────────────────────────── */
+    .card { background: var(--card); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
 
-    /* ── SECTION HEADER ──────────────────────── */
+    /* ── SECTION HEADER ───────────────────── */
     .section-header {
       font-size: 13px; font-weight: 600; color: var(--secondary);
-      text-transform: uppercase; letter-spacing: 0.4px;
+      text-transform: uppercase; letter-spacing: .4px;
       margin: 16px 0 6px 4px;
     }
     .section-header:first-child { margin-top: 4px; }
 
-    /* ── PLANNING TABLE ──────────────────────── */
-    .schedule-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 10px;
-    }
-    .schedule-title { font-size: 15px; font-weight: 600; }
-    .week-type-badge {
-      font-size: 12px; font-weight: 600;
-      padding: 4px 10px; border-radius: 20px;
-    }
+    /* ── PLANNING TABLE ───────────────────── */
+    .schedule-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .schedule-title  { font-size: 15px; font-weight: 600; }
+    .week-type-badge { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 20px; }
     .badge-matin { background: rgba(255,149,0,.15); color: var(--orange); }
     .badge-aprem { background: rgba(0,122,255,.15);  color: var(--blue); }
-
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table.schedule-table {
-      border-collapse: collapse; width: 100%; font-size: 12px;
-    }
+    table.schedule-table { border-collapse: collapse; width: 100%; font-size: 12px; }
     table.schedule-table th {
       background: #F2F2F7; color: var(--secondary); font-weight: 600;
       padding: 6px 2px; text-align: center; min-width: 44px;
@@ -148,86 +118,105 @@
       padding: 5px 3px; text-align: center;
       border-top: 1px solid var(--sep); min-width: 44px;
     }
-    .cat-label {
-      text-align: left !important; font-weight: 600;
-      padding-left: 4px !important; min-width: 60px;
-    }
+    .cat-label { text-align: left !important; font-weight: 600; padding-left: 4px !important; min-width: 60px; }
     .visa-me { font-weight: 700; border-radius: 4px; padding: 1px 3px; }
-    .cat-zac1      .visa-me, .visa-me.cat-zac1      { color: #007AFF; background: rgba(0,122,255,.12); }
-    .cat-zac2      .visa-me, .visa-me.cat-zac2      { color: #34C759; background: rgba(52,199,89,.12); }
-    .cat-verif     .visa-me, .visa-me.cat-verif     { color: #AF52DE; background: rgba(175,82,222,.12); }
-    .cat-formation .visa-me, .visa-me.cat-formation { color: #5AC8FA; background: rgba(90,200,250,.12); }
-    .cat-conges    .visa-me, .visa-me.cat-conges    { color: #FF9500; background: rgba(255,149,0,.12); }
-    .cat-maladie   .visa-me, .visa-me.cat-maladie   { color: #FF3B30; background: rgba(255,59,48,.12); }
-
+    .visa-me.cat-zac1      { color: #007AFF; background: rgba(0,122,255,.12); }
+    .visa-me.cat-zac2      { color: #34C759; background: rgba(52,199,89,.12); }
+    .visa-me.cat-verif     { color: #AF52DE; background: rgba(175,82,222,.12); }
+    .visa-me.cat-formation { color: #5AC8FA; background: rgba(90,200,250,.12); }
+    .visa-me.cat-conges    { color: #FF9500; background: rgba(255,149,0,.12); }
+    .visa-me.cat-maladie   { color: #FF3B30; background: rgba(255,59,48,.12); }
     .day-status { font-size: 11px; font-weight: 600; padding: 2px 4px; border-radius: 4px; }
     .status-ferme { color: var(--red);    background: rgba(255,59,48,.1); }
     .status-ferie { color: var(--purple); background: rgba(175,82,222,.1); }
 
-    /* ── MA SEMAINE ──────────────────────────── */
+    /* ── MA SEMAINE ───────────────────────── */
     .my-day-card {
       background: var(--card); border-radius: 14px;
       padding: 14px 16px; margin-bottom: 10px;
       display: flex; align-items: center; gap: 14px;
     }
-    .my-day-date   { text-align: center; min-width: 36px; }
-    .day-name      { font-size: 11px; font-weight: 600; color: var(--secondary); text-transform: uppercase; }
-    .day-num       { font-size: 22px; font-weight: 700; line-height: 1; }
-    .day-month     { font-size: 10px; color: var(--secondary); }
+    .my-day-date    { text-align: center; min-width: 36px; }
+    .day-name       { font-size: 11px; font-weight: 600; color: var(--secondary); text-transform: uppercase; }
+    .day-num        { font-size: 22px; font-weight: 700; line-height: 1; }
+    .day-month      { font-size: 10px; color: var(--secondary); }
     .my-day-divider { width: 1px; height: 38px; background: var(--sep); }
-    .my-day-info   { flex: 1; }
-    .my-day-cat    { font-size: 16px; font-weight: 600; }
-    .my-day-end    { font-size: 13px; color: var(--secondary); }
+    .my-day-info    { flex: 1; }
+    .my-day-cat     { font-size: 16px; font-weight: 600; }
+    .my-day-end     { font-size: 13px; color: var(--secondary); }
     .my-day-colleagues { font-size: 12px; color: var(--secondary); margin-top: 2px; }
 
-    /* ── SAISIE ──────────────────────────────── */
-    .form-section  { margin-bottom: 14px; }
-    .form-label    { font-size: 13px; font-weight: 600; color: var(--secondary); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; padding-left: 4px; }
-    .form-row      { background: var(--card); border-radius: 12px; overflow: hidden; }
-    .form-field    { display: flex; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--sep); }
+    /* ── SAISIE ───────────────────────────── */
+    .form-section { margin-bottom: 14px; }
+    .form-label   { font-size: 13px; font-weight: 600; color: var(--secondary); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; padding-left: 4px; }
+    .form-row     { background: var(--card); border-radius: 12px; overflow: hidden; }
+    .form-field   { display: flex; align-items: center; padding: 13px 16px; border-bottom: 1px solid var(--sep); }
     .form-field:last-child { border-bottom: none; }
     .form-field label { flex: 1; font-size: 16px; }
-    .stepper       { display: flex; align-items: center; gap: 10px; }
+    .stepper      { display: flex; align-items: center; gap: 10px; }
     .stepper button {
       width: 30px; height: 30px; border-radius: 50%;
-      background: var(--blue); color: #fff;
-      border: none; font-size: 22px; line-height: 1;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      background: var(--blue); color: #fff; border: none;
+      font-size: 22px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
     }
-    .stepper button:active { opacity: 0.7; }
-    .stepper span  { font-size: 18px; font-weight: 600; min-width: 28px; text-align: center; }
-    .segment-control {
-      display: flex; background: var(--card); border-radius: 12px; padding: 2px;
-    }
+    .stepper button:active { opacity: .7; }
+    .stepper span { font-size: 18px; font-weight: 600; min-width: 28px; text-align: center; }
+    .segment-control { display: flex; background: var(--card); border-radius: 12px; padding: 2px; }
     .segment-control button {
       flex: 1; padding: 8px 4px; border: none; border-radius: 10px;
-      background: transparent; font-size: 13px; cursor: pointer;
-      transition: all 0.15s; color: var(--text);
+      background: transparent; font-size: 13px; cursor: pointer; transition: all .15s; color: var(--text);
     }
     .segment-control button.active { background: var(--blue); color: #fff; font-weight: 600; }
 
-    /* ── SETTINGS ────────────────────────────── */
-    .settings-row  { background: var(--card); border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
-    .settings-item {
-      display: flex; align-items: center; padding: 14px 16px;
-      border-bottom: 1px solid var(--sep);
+    /* ── STATS ────────────────────────────── */
+    .kpi-row  { display: flex; gap: 10px; margin-bottom: 12px; }
+    .kpi-card {
+      flex: 1; background: var(--card); border-radius: 14px;
+      padding: 14px 10px; text-align: center;
     }
-    .settings-item:last-child { border-bottom: none; }
-    .settings-item span { flex: 1; font-size: 16px; }
-    .settings-item .value { font-size: 16px; color: var(--secondary); }
+    .kpi-val   { font-size: 26px; font-weight: 700; line-height: 1; }
+    .kpi-label { font-size: 11px; color: var(--secondary); margin-top: 4px; font-weight: 500; }
 
-    /* ── EMPTY STATE ─────────────────────────── */
-    .empty-state {
-      text-align: center; padding: 56px 24px; color: var(--secondary);
+    /* Bar chart */
+    .bar-chart {
+      display: flex; align-items: flex-end; gap: 6px;
+      height: 120px; overflow-x: auto; padding-bottom: 24px;
+      position: relative;
     }
-    .empty-state svg  { width: 56px; height: 56px; margin-bottom: 14px; opacity: 0.35; }
-    .empty-state p    { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+    .bar-col   { display: flex; flex-direction: column; align-items: center; gap: 4px; flex-shrink: 0; min-width: 36px; height: 100%; justify-content: flex-end; }
+    .bar-wrap  { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; height: 96px; gap: 2px; }
+    .bar       { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
+    .bar-pieces  { background: var(--blue); }
+    .bar-rejects { background: rgba(255,59,48,.5); }
+    .bar-lbl   { font-size: 9px; color: var(--secondary); text-align: center; white-space: nowrap; }
+
+    /* Stat rows */
+    .stat-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--sep);
+    }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-row span:first-child { font-size: 15px; }
+    .stat-val { font-size: 15px; font-weight: 600; }
+
+    /* Model breakdown */
+    .model-row    { padding: 10px 0; border-bottom: 1px solid var(--sep); }
+    .model-row:last-child { border-bottom: none; }
+    .model-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; font-size: 15px; }
+    .model-bar-bg   { height: 6px; background: var(--sep); border-radius: 3px; overflow: hidden; }
+    .model-bar-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width .4s; }
+
+    /* ── EMPTY STATE ──────────────────────── */
+    .empty-state { text-align: center; padding: 56px 24px; color: var(--secondary); }
+    .empty-state svg   { width: 56px; height: 56px; margin-bottom: 14px; opacity: .35; }
+    .empty-state p     { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
     .empty-state small { font-size: 14px; }
   </style>
 </head>
 <body>
 
-<!-- ── LOGIN ─────────────────────────────────── -->
+<!-- ── LOGIN ──────────────────────────────── -->
 <div id="login-screen">
   <div class="auth-header">
     <h1>Suivi Production</h1>
@@ -235,8 +224,7 @@
   </div>
   <div class="auth-form">
     <input id="login-visa" type="text" placeholder="Visa (ex : JDU)"
-           autocomplete="username" autocapitalize="characters"
-           autocorrect="off" spellcheck="false" />
+           autocomplete="username" autocapitalize="characters" autocorrect="off" spellcheck="false" />
     <input id="login-pass" type="password" placeholder="Mot de passe"
            autocomplete="current-password" inputmode="numeric" />
     <div class="auth-error" id="login-error"></div>
@@ -244,7 +232,7 @@
   </div>
 </div>
 
-<!-- ── CHANGEMENT MOT DE PASSE ───────────────── -->
+<!-- ── CHANGE PASSWORD ─────────────────────── -->
 <div id="change-password-screen">
   <div class="auth-header">
     <h1>Nouveau mot de passe</h1>
@@ -258,7 +246,7 @@
   </div>
 </div>
 
-<!-- ── APP ───────────────────────────────────── -->
+<!-- ── APP ────────────────────────────────── -->
 <div id="app">
   <header>
     <h1 id="header-title">Planning</h1>
@@ -269,7 +257,7 @@
     <div id="tab-planning" class="tab-page active"></div>
     <div id="tab-myweek"   class="tab-page"></div>
     <div id="tab-entry"    class="tab-page"></div>
-    <div id="tab-settings" class="tab-page"></div>
+    <div id="tab-stats"    class="tab-page"></div>
   </main>
 
   <nav>
@@ -282,8 +270,7 @@
     </button>
     <button onclick="showTab('myweek',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-        <circle cx="12" cy="7" r="4"/>
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
       </svg>
       Ma semaine
     </button>
@@ -294,12 +281,11 @@
       </svg>
       Saisie
     </button>
-    <button onclick="showTab('settings',this)">
+    <button onclick="showTab('stats',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
       </svg>
-      Réglages
+      Stats
     </button>
   </nav>
 </div>
