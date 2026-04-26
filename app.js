@@ -322,7 +322,7 @@ function scheduleCard(s) {
         } else {
           const v    = arr[ri] || '';
           const isMe = v && v === myVisa;
-          cells += `<td>${isMe ? `<span class="visa-me ${cat.cls}">${v}</span>` : v}</td>`;
+          cells += `<td>${v ? `<span class="${isMe ? 'visa-me' : 'visa-col'} ${cat.cls}">${v}</span>` : ''}</td>`;
         }
       });
       bodyRows += `<tr ${rowBg}>${cells}</tr>`;
