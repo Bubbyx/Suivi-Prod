@@ -400,8 +400,15 @@ function renderMyWeek() {
 // ─────────────────────────────────────────────
 //  SAISIE — TAB (liste + navigation date)
 // ─────────────────────────────────────────────
+
+// Retourne "YYYY-MM-DD" dans le fuseau LOCAL du navigateur
+// (évite le décalage UTC+2 qui décalerait tout d'un jour)
 function todayStr() {
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function localDateOf(isoStr) {
+  const d = new Date(isoStr);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
@@ -424,7 +431,7 @@ async function refreshEntryTab() {
 function renderEntryTab() {
   const el    = document.getElementById('tab-entry');
   const today = todayStr();
-  const dayEntries = myEntries.filter(e => e.date.substring(0, 10) === selectedEntryDate);
+  const dayEntries = myEntries.filter(e => localDateOf(e.date) === selectedEntryDate);
 
   const totalPieces  = dayEntries.reduce((s, e) => s + e.totalPieces, 0);
   const totalRejects = dayEntries.reduce((s, e) => s + e.rejects, 0);
@@ -637,7 +644,7 @@ async function saveEntrySheet() {
 
   if (entrySheetMode === 'add') {
     const id      = crypto.randomUUID();
-    const dateISO = new Date(selectedEntryDate + 'T00:00:00.000Z').toISOString();
+    const dateISO = new Date(selectedEntryDate + 'T00:00:00').toISOString(); // minuit local → UTC
     const body    = {
       id, user_visa: myVisa, date: dateISO,
       series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
@@ -713,30 +720,33 @@ let statsPeriod = 'week';
 function renderStats() {
   const el = document.getElementById('tab-stats');
 
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  let startDate;
+  // Calcul de la date de début en chaîne locale YYYY-MM-DD (évite le décalage UTC)
+  const todayLocal = todayStr();
+  let startDateStr;
   if (statsPeriod === 'day') {
-    startDate = new Date(today);
+    startDateStr = todayLocal;
   } else if (statsPeriod === 'week') {
-    startDate = new Date(today); startDate.setDate(today.getDate() - 6);
+    const d = new Date(todayLocal + 'T12:00:00'); d.setDate(d.getDate() - 6);
+    startDateStr = localDateOf(d.toISOString());
   } else {
-    startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    const d = new Date(); startDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
   }
 
-  const filtered = myEntries.filter(e => e.dateObj >= startDate);
+  // Filtrage par date locale (pas par dateObj qui est en UTC)
+  const filtered = myEntries.filter(e => localDateOf(e.date) >= startDateStr);
   const totalPieces  = filtered.reduce((s, e) => s + e.totalPieces, 0);
   const totalRejects = filtered.reduce((s, e) => s + e.rejects, 0);
   const rejectRate   = totalPieces > 0 ? (totalRejects / totalPieces * 100) : 0;
 
-  // Group by day
+  // Group by local day
   const byDay = {};
   filtered.forEach(e => {
-    const key = e.dateObj.toDateString();
-    if (!byDay[key]) byDay[key] = { date: e.dateObj, pieces: 0, rejects: 0 };
+    const key = localDateOf(e.date);
+    if (!byDay[key]) byDay[key] = { key, date: new Date(key + 'T12:00:00'), pieces: 0, rejects: 0 };
     byDay[key].pieces  += e.totalPieces;
     byDay[key].rejects += e.rejects;
   });
-  const days = Object.values(byDay).sort((a, b) => a.date - b.date);
+  const days = Object.values(byDay).sort((a, b) => a.key.localeCompare(b.key));
 
   // Group by model
   const byModel = {};
