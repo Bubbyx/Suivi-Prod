@@ -207,6 +207,15 @@
     .model-bar-bg   { height: 6px; background: var(--sep); border-radius: 3px; overflow: hidden; }
     .model-bar-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width .4s; }
 
+    /* ── SPINNER ──────────────────────────── */
+    .spinner-wrap { display:flex; justify-content:center; padding:56px; }
+    .spinner {
+      width:32px; height:32px; border:3px solid var(--sep);
+      border-top-color:var(--blue); border-radius:50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ── EMPTY STATE ──────────────────────── */
     .empty-state { text-align: center; padding: 56px 24px; color: var(--secondary); }
     .empty-state svg   { width: 56px; height: 56px; margin-bottom: 14px; opacity: .35; }

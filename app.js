@@ -175,7 +175,22 @@ function renderCurrentTab() {
   if      (currentTab === 'planning') renderPlanning();
   else if (currentTab === 'myweek')   renderMyWeek();
   else if (currentTab === 'entry')    renderEntry();
-  else if (currentTab === 'stats')    renderStats();
+  else if (currentTab === 'stats')    refreshAndRenderStats();
+}
+
+async function refreshAndRenderStats() {
+  // Affiche un loader puis fetch les dernières saisies depuis Supabase
+  document.getElementById('tab-stats').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  const rows = await sbGet(
+    `/rest/v1/production_entries?user_visa=eq.${encodeURIComponent(myVisa)}&select=*&order=date.desc`
+  );
+  myEntries = (rows || []).map(e => ({
+    ...e,
+    dateObj:     new Date(e.date),
+    totalPieces: e.series_count * e.molds_per_series
+  }));
+  renderStats();
 }
 
 // ─────────────────────────────────────────────
@@ -328,7 +343,12 @@ function renderMyWeek() {
 // ─────────────────────────────────────────────
 //  SAISIE
 // ─────────────────────────────────────────────
-let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0 };
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0, date: todayStr() };
 
 function renderEntry() {
   const el = document.getElementById('tab-entry');
@@ -341,8 +361,14 @@ function renderEntry() {
 
   el.innerHTML = `
     <div class="form-section">
-      <div class="form-label">Modèle</div>
+      <div class="form-label">Date &amp; Modèle</div>
       <div class="form-row">
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" value="${entry.date}" max="${todayStr()}"
+            onchange="entry.date = this.value"
+            style="border:none;background:transparent;font-size:16px;color:#007AFF;outline:none;text-align:right;" />
+        </div>
         <div class="form-field">
           <label>Modèle</label>
           <select onchange="onModelChange(this.value)" style="border:none;background:transparent;font-size:16px;color:#007AFF;outline:none;max-width:160px;text-align:right;">
@@ -417,11 +443,12 @@ async function saveEntry() {
   const fb  = document.getElementById('entry-fb');
   btn.disabled = true; btn.textContent = 'Enregistrement…';
 
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  // Construire la date à partir du champ sélectionné (YYYY-MM-DD → minuit UTC)
+  const selectedDate = new Date(entry.date + 'T00:00:00.000Z');
   const body = {
     id:                 crypto.randomUUID(),
     user_visa:          myVisa,
-    date:               today.toISOString(),
+    date:               selectedDate.toISOString(),
     series_count:       entry.seriesCount,
     molds_per_series:   entry.moldsPerSeries,
     rejects:            entry.rejects,
@@ -430,10 +457,9 @@ async function saveEntry() {
 
   const ok = await sbUpsert('production_entries', body);
   if (ok) {
-    // Add to local state so stats update immediately
-    myEntries.unshift({ ...body, dateObj: today, totalPieces: entry.seriesCount * entry.moldsPerSeries });
+    myEntries.unshift({ ...body, dateObj: selectedDate, totalPieces: entry.seriesCount * entry.moldsPerSeries });
     fb.style.color = '#34C759'; fb.textContent = '✓ Saisie enregistrée !';
-    entry.seriesCount = 1; entry.rejects = 0;
+    entry.seriesCount = 1; entry.rejects = 0; entry.date = todayStr();
     setTimeout(() => { fb.textContent = ''; renderEntry(); }, 2000);
   } else {
     fb.style.color = '#FF3B30'; fb.textContent = "Erreur lors de l'enregistrement";
