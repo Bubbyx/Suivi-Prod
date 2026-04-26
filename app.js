@@ -633,5 +633,9 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   const saved = localStorage.getItem('myVisa');
-  if (saved) { myVisa = saved; showApp(); }
+  if (saved) {
+    myVisa = saved;
+    document.getElementById('login-screen').style.display = 'none';
+    showApp();
+  }
 });
