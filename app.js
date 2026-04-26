@@ -69,6 +69,52 @@ async function sha256(str) {
 }
 
 // ─────────────────────────────────────────────
+//  DISCORD LOGGER
+// ─────────────────────────────────────────────
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1495861049889525810/LCroi8U-e1A7q13FvLvnX9Um7OIF99HUr5iVYjRSP7yspEr6RkYTIYXy2VNsNHnqvoV0';
+
+function deviceDescription() {
+  const ua = navigator.userAgent;
+  let device = 'Web';
+  if      (/iPhone/.test(ua))   device = 'iPhone';
+  else if (/iPad/.test(ua))     device = 'iPad';
+  else if (/Android/.test(ua))  device = 'Android';
+  else if (/Macintosh/.test(ua))device = 'Mac';
+  else if (/Windows/.test(ua))  device = 'Windows';
+  else if (/Linux/.test(ua))    device = 'Linux';
+
+  let browser = '';
+  if      (/CriOS/.test(ua))    browser = 'Chrome iOS';
+  else if (/FxiOS/.test(ua))    browser = 'Firefox iOS';
+  else if (/EdgA/.test(ua))     browser = 'Edge Android';
+  else if (/Edg\//.test(ua))    browser = 'Edge';
+  else if (/OPR/.test(ua))      browser = 'Opera';
+  else if (/Chrome/.test(ua))   browser = 'Chrome';
+  else if (/Firefox/.test(ua))  browser = 'Firefox';
+  else if (/Safari/.test(ua))   browser = 'Safari';
+  else                           browser = 'Navigateur';
+
+  return `${device} — ${browser}`;
+}
+
+function discordLog({ title, description, color, visa }) {
+  const fields = [];
+  if (visa) fields.push({ name: '👤 Utilisateur', value: `**${visa}**`, inline: true });
+  fields.push({ name: '🌐 Appareil', value: deviceDescription(), inline: false });
+  fetch(DISCORD_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      embeds: [{
+        title, description, color, fields,
+        timestamp: new Date().toISOString(),
+        footer: { text: 'SuiviProduction Web' }
+      }]
+    })
+  }).catch(() => {});
+}
+
+// ─────────────────────────────────────────────
 //  AUTH
 // ─────────────────────────────────────────────
 async function handleLogin() {
@@ -114,6 +160,7 @@ async function handleChangePassword() {
   if (p1 !== p2)     { err.textContent = 'Les mots de passe ne correspondent pas'; return; }
   const hash = await sha256(p1);
   await sbUpsert('app_users', { visa: pendingUser.visa, password_hash: hash, must_change_password: false });
+  discordLog({ title: '🔐 Mot de passe modifié', description: `**Visa:** ${pendingUser.visa}`, color: 16705372, visa: pendingUser.visa });
   finishLogin(pendingUser.visa);
 }
 
@@ -122,10 +169,12 @@ function finishLogin(visa) {
   localStorage.setItem('myVisa', visa);
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('change-password-screen').style.display = 'none';
+  discordLog({ title: '🔑 Connexion', description: `**Visa:** ${visa}`, color: 1752220, visa });
   showApp();
 }
 
 function logout() {
+  discordLog({ title: '🚪 Déconnexion', description: `**Visa:** ${myVisa}`, color: 9807270, visa: myVisa });
   myVisa = ''; schedules = []; productModels = []; myEntries = [];
   localStorage.removeItem('myVisa');
   document.getElementById('app').style.display = 'none';
@@ -458,6 +507,11 @@ async function saveEntry() {
   const ok = await sbUpsert('production_entries', body);
   if (ok) {
     myEntries.unshift({ ...body, dateObj: selectedDate, totalPieces: entry.seriesCount * entry.moldsPerSeries });
+    const total = entry.seriesCount * entry.moldsPerSeries;
+    let desc = `**Modèle:** ${entry.modelName}\n**Séries:** ${entry.seriesCount} × ${entry.moldsPerSeries} = **${total} moules**`;
+    if (entry.rejects > 0) desc += `\n**Rebuts:** ${entry.rejects}`;
+    desc += `\n**Date:** ${selectedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+    discordLog({ title: '✅ Saisie ajoutée', description: desc, color: 5763719, visa: myVisa });
     fb.style.color = '#34C759'; fb.textContent = '✓ Saisie enregistrée !';
     entry.seriesCount = 1; entry.rejects = 0; entry.date = todayStr();
     setTimeout(() => { fb.textContent = ''; renderEntry(); }, 2000);
