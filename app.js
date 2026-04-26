@@ -76,6 +76,14 @@ async function sha256(str) {
 }
 
 // ─────────────────────────────────────────────
+//  DARK MODE
+// ─────────────────────────────────────────────
+function toggleDarkMode(isDark) {
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  localStorage.setItem('darkMode', isDark ? '1' : '0');
+}
+
+// ─────────────────────────────────────────────
 //  DISCORD LOGGER
 // ─────────────────────────────────────────────
 const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1495861049889525810/'
@@ -312,7 +320,7 @@ function scheduleCard(s) {
   CATS.forEach((cat, ci) => {
     const dayArrays = cat.visas(p).slice(0, dayCount);
     const maxR      = Math.max(...dayArrays.map(a => a.length), 1);
-    const rowBg     = ci % 2 !== 0 ? 'style="background:rgba(242,242,247,0.7)"' : '';
+    const rowBg     = ci % 2 !== 0 ? 'class="row-alt"' : '';
 
     for (let ri = 0; ri < maxR; ri++) {
       let cells = '';
@@ -886,6 +894,11 @@ window.addEventListener('DOMContentLoaded', () => {
   ['login-visa', 'login-pass'].forEach(id => {
     document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
   });
+
+  // Synchronise l'état du toggle avec localStorage
+  if (localStorage.getItem('darkMode') === '1') {
+    document.getElementById('dark-mode-toggle').checked = true;
+  }
 
   const saved = localStorage.getItem('myVisa');
   if (saved) {
