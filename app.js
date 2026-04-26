@@ -296,10 +296,16 @@ function scheduleCard(s) {
   const p        = s.payload;
   const isMatin  = s.week_type === 'Matin';
   const dayCount = p.hideSaturday ? 5 : 6;
-  const labels   = DAY_LABELS.slice(0, dayCount);
   const statuses = STATUS_KEYS.slice(0, dayCount).map(k => p[k] || '');
 
-  let headerRow = '<th></th>' + labels.map(l => `<th>${l}</th>`).join('');
+  // Calcul de la date de chaque jour à partir du lundi de la semaine
+  const mon = new Date(s.week_start_date + 'T12:00:00');
+  const dayHeaders = DAY_LABELS.slice(0, dayCount).map((lbl, i) => {
+    const d = new Date(mon); d.setDate(mon.getDate() + i);
+    return `${lbl}<br><span style="font-weight:400;font-size:10px">${String(d.getDate()).padStart(2,'0')}</span>`;
+  });
+
+  let headerRow = '<th></th>' + dayHeaders.map(h => `<th>${h}</th>`).join('');
   let bodyRows  = '';
 
   CATS.forEach((cat, ci) => {
