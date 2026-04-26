@@ -299,8 +299,8 @@ function scheduleCard(s) {
   const statuses = STATUS_KEYS.slice(0, dayCount).map(k => p[k] || '');
 
   // Calcul de la date de chaque jour à partir du lundi de la semaine
-  // On prend uniquement les 10 premiers caractères pour éviter le NaN si Supabase retourne un timestamp complet
-  const mon = new Date(s.week_start_date.substring(0, 10) + 'T12:00:00');
+  // localDateOf() convertit le timestamp UTC en date locale (évite le décalage UTC+2)
+  const mon = new Date(localDateOf(s.week_start_date) + 'T12:00:00');
   const dayHeaders = DAY_LABELS.slice(0, dayCount).map((lbl, i) => {
     const d = new Date(mon); d.setDate(mon.getDate() + i);
     return `${lbl}<br><span style="font-weight:400;font-size:10px">${String(d.getDate()).padStart(2,'0')}</span>`;
