@@ -59,6 +59,13 @@ async function sbUpsert(table, body) {
   } catch { return false; }
 }
 
+async function sbDelete(path) {
+  try {
+    const r = await fetch(SB_URL + path, { method: 'DELETE', headers: HEADERS });
+    return r.ok;
+  } catch { return false; }
+}
+
 // ─────────────────────────────────────────────
 //  CRYPTO
 // ─────────────────────────────────────────────
@@ -71,7 +78,8 @@ async function sha256(str) {
 // ─────────────────────────────────────────────
 //  DISCORD LOGGER
 // ─────────────────────────────────────────────
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1495861049889525810/LCroi8U-e1A7q13FvLvnX9Um7OIF99HUr5iVYjRSP7yspEr6RkYTIYXy2VNsNHnqvoV0';
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1495861049889525810/'
+  + 'LCroi8U-e1A7q13FvLvnX9Um7OIF99HUr5iVYjRSP7yspEr6RkYTIYXy2VNsNHnqvoV0';
 
 function deviceDescription() {
   const ua = navigator.userAgent;
@@ -390,134 +398,310 @@ function renderMyWeek() {
 }
 
 // ─────────────────────────────────────────────
-//  SAISIE
+//  SAISIE — TAB (liste + navigation date)
 // ─────────────────────────────────────────────
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0, date: todayStr() };
+let selectedEntryDate = todayStr();
 
-function renderEntry() {
+function renderEntry() { refreshEntryTab(); }
+
+async function refreshEntryTab() {
   const el = document.getElementById('tab-entry');
-  if (!productModels.length) { el.innerHTML = emptyState('Aucun modèle', "Demande à l'admin d'ajouter des modèles"); return; }
-  if (!entry.modelName) {
-    entry.modelName      = productModels[0].name;
-    entry.moldsPerSeries = productModels[0].molds_per_series || 27;
-  }
-  const total = entry.seriesCount * entry.moldsPerSeries;
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  const rows = await sbGet(
+    `/rest/v1/production_entries?user_visa=eq.${encodeURIComponent(myVisa)}&select=*&order=date.desc`
+  );
+  myEntries = (rows || []).map(e => ({
+    ...e, dateObj: new Date(e.date), totalPieces: e.series_count * e.molds_per_series
+  }));
+  renderEntryTab();
+}
 
-  el.innerHTML = `
-    <div class="form-section">
-      <div class="form-label">Date &amp; Modèle</div>
+function renderEntryTab() {
+  const el    = document.getElementById('tab-entry');
+  const today = todayStr();
+  const dayEntries = myEntries.filter(e => e.date.substring(0, 10) === selectedEntryDate);
+
+  const totalPieces  = dayEntries.reduce((s, e) => s + e.totalPieces, 0);
+  const totalRejects = dayEntries.reduce((s, e) => s + e.rejects, 0);
+  const successRate  = totalPieces > 0 ? Math.round((totalPieces - totalRejects) / totalPieces * 100) : null;
+  const isToday      = selectedEntryDate === today;
+
+  // Date display — use noon local time to avoid timezone edge cases
+  const displayDate = new Date(selectedEntryDate + 'T12:00:00');
+  const dateLabel   = isToday
+    ? "Aujourd'hui"
+    : displayDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const dateCapital = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
+
+  let html = `
+    <div class="date-nav">
+      <button class="date-nav-btn" onclick="changeEntryDate(-1)">‹</button>
+      <button class="date-nav-label" onclick="document.getElementById('entry-date-picker').showPicker()">${dateCapital}</button>
+      <input type="date" id="entry-date-picker" value="${selectedEntryDate}" max="${today}"
+        onchange="setEntryDate(this.value)"
+        style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" />
+      <button class="date-nav-btn" onclick="changeEntryDate(1)" ${isToday ? 'disabled' : ''}>›</button>
+    </div>`;
+
+  if (dayEntries.length > 0) {
+    const rateColor = successRate >= 98 ? 'var(--green)' : successRate >= 95 ? 'var(--orange)' : 'var(--red)';
+    html += `
+    <div class="summary-bar">
+      <div class="summary-kpi">
+        <div class="summary-val" style="color:var(--blue)">${totalPieces}</div>
+        <div class="summary-lbl">Moules</div>
+      </div>
+      <div class="summary-sep"></div>
+      <div class="summary-kpi">
+        <div class="summary-val" style="color:${totalRejects > 0 ? 'var(--red)' : 'var(--secondary)'}">${totalRejects}</div>
+        <div class="summary-lbl">Rebuts</div>
+      </div>
+      <div class="summary-sep"></div>
+      <div class="summary-kpi">
+        <div class="summary-val" style="color:${rateColor}">${successRate}%</div>
+        <div class="summary-lbl">Réussite</div>
+      </div>
+    </div>`;
+
+    html += `<div class="section-header">Saisies du jour</div>
+    <div class="card" style="padding:0;overflow:hidden">`;
+    dayEntries.forEach((e, i) => {
+      const model     = e.product_model_name || 'Inconnu';
+      const rejectTxt = e.rejects > 0 ? ` · ${e.rejects} rebut${e.rejects > 1 ? 's' : ''}` : '';
+      const sep       = i < dayEntries.length - 1 ? 'entry-row-sep' : '';
+      html += `
+      <div class="entry-row ${sep}">
+        <div class="entry-row-info">
+          <div class="entry-model">${model}</div>
+          <div class="entry-detail">${e.series_count} × ${e.molds_per_series} = <strong>${e.totalPieces} moules</strong>${rejectTxt}</div>
+        </div>
+        <div class="entry-row-btns">
+          <button class="entry-btn" onclick="openEditSheet('${e.id}')">✏️</button>
+          <button class="entry-btn entry-btn-del" onclick="confirmDeleteEntry('${e.id}')">🗑</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  } else {
+    html += emptyState(
+      'Aucune saisie',
+      isToday ? 'Appuyez sur + pour ajouter votre production' : 'Aucune production enregistrée ce jour'
+    );
+  }
+
+  html += `<button class="btn-primary" style="margin-top:16px" onclick="openAddSheet()">+ Nouvelle saisie</button>`;
+  el.innerHTML = html;
+}
+
+function changeEntryDate(delta) {
+  const d = new Date(selectedEntryDate + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  const next = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if (next > todayStr()) return;
+  selectedEntryDate = next;
+  renderEntryTab();
+}
+
+function setEntryDate(dateStr) {
+  selectedEntryDate = dateStr;
+  renderEntryTab();
+}
+
+// ─────────────────────────────────────────────
+//  SAISIE — SHEET (add / edit)
+// ─────────────────────────────────────────────
+let entrySheetMode = 'add';  // 'add' | 'edit'
+let editingEntryId = null;
+let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0 };
+
+function openAddSheet() {
+  entrySheetMode = 'add';
+  editingEntryId = null;
+  const m = productModels[0];
+  entry = { modelName: m?.name || null, moldsPerSeries: m?.molds_per_series || 27, seriesCount: 1, rejects: 0 };
+  document.getElementById('sheet-title').textContent = 'Nouvelle saisie';
+  document.getElementById('sheet-save-btn').textContent = 'Ajouter';
+  renderSheetForm();
+  document.getElementById('entry-sheet').classList.add('open');
+}
+
+function openEditSheet(id) {
+  const e = myEntries.find(x => x.id === id);
+  if (!e) return;
+  entrySheetMode = 'edit';
+  editingEntryId = id;
+  entry = {
+    modelName:      e.product_model_name || productModels[0]?.name,
+    moldsPerSeries: e.molds_per_series,
+    seriesCount:    e.series_count,
+    rejects:        e.rejects
+  };
+  document.getElementById('sheet-title').textContent = 'Modifier la saisie';
+  document.getElementById('sheet-save-btn').textContent = 'Enregistrer';
+  renderSheetForm();
+  document.getElementById('entry-sheet').classList.add('open');
+}
+
+function closeEntrySheet() {
+  document.getElementById('entry-sheet').classList.remove('open');
+}
+
+function closeEntrySheetIfBackdrop(ev) {
+  if (ev.target === document.getElementById('entry-sheet')) closeEntrySheet();
+}
+
+function renderSheetForm() {
+  if (!productModels.length) {
+    document.getElementById('sheet-body').innerHTML =
+      emptyState('Aucun modèle', "Demande à l'admin d'ajouter des modèles");
+    return;
+  }
+  const total   = entry.seriesCount * entry.moldsPerSeries;
+  const options = productModels.map(m =>
+    `<option value="${m.name}"${m.name === entry.modelName ? ' selected' : ''}>${m.name}</option>`
+  ).join('');
+
+  document.getElementById('sheet-body').innerHTML = `
+    <div style="padding:14px 14px 0;display:flex;flex-direction:column;gap:12px">
       <div class="form-row">
         <div class="form-field">
-          <label>Date</label>
-          <input type="date" value="${entry.date}" max="${todayStr()}"
-            onchange="entry.date = this.value"
-            style="border:none;background:transparent;font-size:16px;color:#007AFF;outline:none;text-align:right;" />
-        </div>
-        <div class="form-field">
           <label>Modèle</label>
-          <select onchange="onModelChange(this.value)" style="border:none;background:transparent;font-size:16px;color:#007AFF;outline:none;max-width:160px;text-align:right;">
-            ${productModels.map(m => `<option value="${m.name}"${m.name===entry.modelName?' selected':''}>${m.name}</option>`).join('')}
+          <select onchange="sheetModelChange(this.value)"
+            style="border:none;background:transparent;font-size:16px;color:var(--blue);outline:none;max-width:180px;text-align:right">
+            ${options}
           </select>
         </div>
       </div>
-    </div>
-
-    <div class="form-section">
-      <div class="form-label">Production</div>
       <div class="form-row">
         <div class="form-field">
           <label>Moules / série</label>
           <div class="stepper">
-            <button onclick="step('moldsPerSeries',-1)">−</button>
-            <span id="v-molds">${entry.moldsPerSeries}</span>
-            <button onclick="step('moldsPerSeries',1)">+</button>
+            <button onclick="sheetStep('moldsPerSeries',-1)">−</button>
+            <span id="sh-molds">${entry.moldsPerSeries}</span>
+            <button onclick="sheetStep('moldsPerSeries',1)">+</button>
           </div>
         </div>
         <div class="form-field">
           <label>Séries</label>
           <div class="stepper">
-            <button onclick="step('seriesCount',-1)">−</button>
-            <span id="v-series">${entry.seriesCount}</span>
-            <button onclick="step('seriesCount',1)">+</button>
+            <button onclick="sheetStep('seriesCount',-1)">−</button>
+            <span id="sh-series">${entry.seriesCount}</span>
+            <button onclick="sheetStep('seriesCount',1)">+</button>
           </div>
         </div>
         <div class="form-field">
           <label>Total moules</label>
-          <span id="v-total" style="color:#007AFF;font-weight:700;font-size:18px">${total}</span>
+          <span id="sh-total" style="color:var(--blue);font-weight:700;font-size:18px">${total}</span>
         </div>
       </div>
-    </div>
-
-    <div class="form-section">
-      <div class="form-label">Rebuts</div>
       <div class="form-row">
         <div class="form-field">
           <label>Rebuts</label>
           <div class="stepper">
-            <button onclick="step('rejects',-1)">−</button>
-            <span id="v-rejects">${entry.rejects}</span>
-            <button onclick="step('rejects',1)">+</button>
+            <button onclick="sheetStep('rejects',-1)">−</button>
+            <span id="sh-rejects">${entry.rejects}</span>
+            <button onclick="sheetStep('rejects',1)">+</button>
           </div>
         </div>
       </div>
-    </div>
-
-    <button class="btn-primary" id="entry-save-btn" onclick="saveEntry()">Enregistrer la saisie</button>
-    <div id="entry-fb" style="text-align:center;margin-top:12px;font-size:14px"></div>`;
+      <div id="sheet-fb" style="text-align:center;font-size:14px;color:var(--red);min-height:18px"></div>
+    </div>`;
 }
 
-function onModelChange(name) {
+function sheetModelChange(name) {
   entry.modelName = name;
   const m = productModels.find(x => x.name === name);
   if (m && m.molds_per_series > 0) entry.moldsPerSeries = m.molds_per_series;
-  renderEntry();
+  renderSheetForm();
 }
 
-function step(field, delta) {
+function sheetStep(field, delta) {
   const max = field === 'rejects' ? Math.max(entry.seriesCount * entry.moldsPerSeries, 1) : 999;
   entry[field] = Math.max(0, Math.min(max, entry[field] + delta));
   if (field !== 'rejects') entry.rejects = Math.min(entry.rejects, Math.max(0, entry.seriesCount * entry.moldsPerSeries));
-  const map = { 'v-molds': entry.moldsPerSeries, 'v-series': entry.seriesCount,
-                'v-total': entry.seriesCount * entry.moldsPerSeries, 'v-rejects': entry.rejects };
+  const map = { 'sh-molds': entry.moldsPerSeries, 'sh-series': entry.seriesCount,
+                'sh-total': entry.seriesCount * entry.moldsPerSeries, 'sh-rejects': entry.rejects };
   Object.entries(map).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
 }
 
-async function saveEntry() {
-  const btn = document.getElementById('entry-save-btn');
-  const fb  = document.getElementById('entry-fb');
-  btn.disabled = true; btn.textContent = 'Enregistrement…';
+async function saveEntrySheet() {
+  const btn = document.getElementById('sheet-save-btn');
+  const fb  = document.getElementById('sheet-fb');
+  if (!entry.modelName) { fb.textContent = 'Sélectionne un modèle'; return; }
+  btn.disabled = true;
 
-  // Construire la date à partir du champ sélectionné (YYYY-MM-DD → minuit UTC)
-  const selectedDate = new Date(entry.date + 'T00:00:00.000Z');
-  const body = {
-    id:                 crypto.randomUUID(),
-    user_visa:          myVisa,
-    date:               selectedDate.toISOString(),
-    series_count:       entry.seriesCount,
-    molds_per_series:   entry.moldsPerSeries,
-    rejects:            entry.rejects,
-    product_model_name: entry.modelName
-  };
-
-  const ok = await sbUpsert('production_entries', body);
-  if (ok) {
-    myEntries.unshift({ ...body, dateObj: selectedDate, totalPieces: entry.seriesCount * entry.moldsPerSeries });
-    const total = entry.seriesCount * entry.moldsPerSeries;
-    let desc = `**Modèle:** ${entry.modelName}\n**Séries:** ${entry.seriesCount} × ${entry.moldsPerSeries} = **${total} moules**`;
-    if (entry.rejects > 0) desc += `\n**Rebuts:** ${entry.rejects}`;
-    desc += `\n**Date:** ${selectedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
-    discordLog({ title: '✅ Saisie ajoutée', description: desc, color: 5763719, visa: myVisa });
-    fb.style.color = '#34C759'; fb.textContent = '✓ Saisie enregistrée !';
-    entry.seriesCount = 1; entry.rejects = 0; entry.date = todayStr();
-    setTimeout(() => { fb.textContent = ''; renderEntry(); }, 2000);
+  if (entrySheetMode === 'add') {
+    const id      = crypto.randomUUID();
+    const dateISO = new Date(selectedEntryDate + 'T00:00:00.000Z').toISOString();
+    const body    = {
+      id, user_visa: myVisa, date: dateISO,
+      series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
+      rejects: entry.rejects, product_model_name: entry.modelName
+    };
+    const ok = await sbUpsert('production_entries', body);
+    if (ok) {
+      myEntries.unshift({ ...body, dateObj: new Date(dateISO), totalPieces: entry.seriesCount * entry.moldsPerSeries });
+      const total = entry.seriesCount * entry.moldsPerSeries;
+      let desc = `**Modèle:** ${entry.modelName}\n**Séries:** ${entry.seriesCount} × ${entry.moldsPerSeries} = **${total} moules**`;
+      if (entry.rejects > 0) desc += `\n**Rebuts:** ${entry.rejects}`;
+      const d = new Date(selectedEntryDate + 'T12:00:00');
+      desc += `\n**Date:** ${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+      discordLog({ title: '✅ Saisie ajoutée', description: desc, color: 5763719, visa: myVisa });
+      closeEntrySheet();
+      renderEntryTab();
+    } else {
+      fb.textContent = "Erreur lors de l'enregistrement";
+      btn.disabled = false;
+    }
   } else {
-    fb.style.color = '#FF3B30'; fb.textContent = "Erreur lors de l'enregistrement";
-    btn.disabled = false; btn.textContent = 'Enregistrer la saisie';
+    // Edit
+    const existing = myEntries.find(x => x.id === editingEntryId);
+    if (!existing) return;
+    const body = {
+      id: editingEntryId, user_visa: myVisa, date: existing.date,
+      series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
+      rejects: entry.rejects, product_model_name: entry.modelName
+    };
+    const ok = await sbUpsert('production_entries', body);
+    if (ok) {
+      Object.assign(existing, {
+        series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
+        rejects: entry.rejects, product_model_name: entry.modelName,
+        totalPieces: entry.seriesCount * entry.moldsPerSeries
+      });
+      const total = entry.seriesCount * entry.moldsPerSeries;
+      let desc = `**Modèle:** ${entry.modelName}\n**Séries:** ${entry.seriesCount} × ${entry.moldsPerSeries} = **${total} moules**`;
+      if (entry.rejects > 0) desc += `\n**Rebuts:** ${entry.rejects}`;
+      discordLog({ title: '✏️ Saisie modifiée', description: desc, color: 16705372, visa: myVisa });
+      closeEntrySheet();
+      renderEntryTab();
+    } else {
+      fb.textContent = "Erreur lors de l'enregistrement";
+      btn.disabled = false;
+    }
+  }
+}
+
+async function confirmDeleteEntry(id) {
+  if (!confirm('Supprimer cette saisie ?')) return;
+  const e       = myEntries.find(x => x.id === id);
+  const encoded = encodeURIComponent(id);
+  const ok      = await sbDelete(`/rest/v1/production_entries?id=eq.${encoded}`);
+  if (ok) {
+    if (e) discordLog({
+      title: '🗑️ Saisie supprimée',
+      description: `**Modèle:** ${e.product_model_name || 'Inconnu'}\n**Total:** ${e.totalPieces} moules`,
+      color: 15548997, visa: myVisa
+    });
+    myEntries = myEntries.filter(x => x.id !== id);
+    renderEntryTab();
+  } else {
+    alert('Erreur lors de la suppression');
   }
 }
 
