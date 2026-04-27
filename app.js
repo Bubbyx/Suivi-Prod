@@ -1140,9 +1140,10 @@ function closeAdminLoginSheet() {
 function closeAdminLoginIfBackdrop(ev) {
   if (ev.target === document.getElementById('admin-login-sheet')) closeAdminLoginSheet();
 }
-function handleAdminLogin() {
+async function handleAdminLogin() {
   const pw = document.getElementById('admin-pass-input').value;
-  if (pw === 'admin1234') {
+  const pwHash = await sha256(pw);
+  if (pwHash === '9553e04842c1d1fb72b020ee5d93be5872f98f091202565be73e903a07a2ea7c') {
     isAdminMode = true;
     closeAdminLoginSheet();
     updateAdminLockBtn();
