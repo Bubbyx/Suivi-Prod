@@ -671,6 +671,8 @@ let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0 };
 function openAddSheet() {
   entrySheetMode = 'add';
   editingEntryId = null;
+  // Fallback cache si productModels vide (ex: première ouverture hors ligne)
+  if (!productModels.length) productModels = cacheGet('cache_models') || [];
   const m = productModels[0];
   entry = { modelName: m?.name || null, moldsPerSeries: m?.molds_per_series || 27, seriesCount: 1, rejects: 0 };
   document.getElementById('sheet-title').textContent = 'Nouvelle saisie';
@@ -731,7 +733,8 @@ function renderSheetForm() {
           <label>Moules / série</label>
           <div class="stepper">
             <button onclick="sheetStep('moldsPerSeries',-1)">−</button>
-            <span id="sh-molds">${entry.moldsPerSeries}</span>
+            <input type="number" id="sh-molds" class="stepper-input" value="${entry.moldsPerSeries}" min="1" max="999"
+              onfocus="this.select()" onchange="sheetSetField('moldsPerSeries',+this.value)" />
             <button onclick="sheetStep('moldsPerSeries',1)">+</button>
           </div>
         </div>
@@ -739,7 +742,8 @@ function renderSheetForm() {
           <label>Séries</label>
           <div class="stepper">
             <button onclick="sheetStep('seriesCount',-1)">−</button>
-            <span id="sh-series">${entry.seriesCount}</span>
+            <input type="number" id="sh-series" class="stepper-input" value="${entry.seriesCount}" min="1" max="999"
+              onfocus="this.select()" onchange="sheetSetField('seriesCount',+this.value)" />
             <button onclick="sheetStep('seriesCount',1)">+</button>
           </div>
         </div>
@@ -753,7 +757,8 @@ function renderSheetForm() {
           <label>Rebuts</label>
           <div class="stepper">
             <button onclick="sheetStep('rejects',-1)">−</button>
-            <span id="sh-rejects">${entry.rejects}</span>
+            <input type="number" id="sh-rejects" class="stepper-input" value="${entry.rejects}" min="0"
+              onfocus="this.select()" onchange="sheetSetField('rejects',+this.value)" />
             <button onclick="sheetStep('rejects',1)">+</button>
           </div>
         </div>
@@ -769,13 +774,25 @@ function sheetModelChange(name) {
   renderSheetForm();
 }
 
-function sheetStep(field, delta) {
+function sheetSetVal(id, val) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.tagName === 'INPUT' ? (el.value = val) : (el.textContent = val);
+}
+
+function sheetSetField(field, val) {
+  val = isNaN(val) || val < 0 ? 0 : Math.floor(val);
   const max = field === 'rejects' ? Math.max(entry.seriesCount * entry.moldsPerSeries, 1) : 999;
-  entry[field] = Math.max(0, Math.min(max, entry[field] + delta));
+  entry[field] = Math.min(max, Math.max(0, val));
   if (field !== 'rejects') entry.rejects = Math.min(entry.rejects, Math.max(0, entry.seriesCount * entry.moldsPerSeries));
-  const map = { 'sh-molds': entry.moldsPerSeries, 'sh-series': entry.seriesCount,
-                'sh-total': entry.seriesCount * entry.moldsPerSeries, 'sh-rejects': entry.rejects };
-  Object.entries(map).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.textContent = val; });
+  sheetSetVal('sh-molds',   entry.moldsPerSeries);
+  sheetSetVal('sh-series',  entry.seriesCount);
+  sheetSetVal('sh-total',   entry.seriesCount * entry.moldsPerSeries);
+  sheetSetVal('sh-rejects', entry.rejects);
+}
+
+function sheetStep(field, delta) {
+  sheetSetField(field, entry[field] + delta);
 }
 
 async function saveEntrySheet() {
@@ -1259,7 +1276,7 @@ function openModelSheet(name) {
   modelMoldsVal = m ? m.molds_per_series : 27;
   document.getElementById('model-sheet-title').textContent = name ? 'Modifier le modèle' : 'Nouveau modèle';
   document.getElementById('model-name-input').value = m?.name || '';
-  document.getElementById('model-molds-val').textContent = modelMoldsVal;
+  document.getElementById('model-molds-val').value = modelMoldsVal;
   document.getElementById('model-sheet-error').textContent = '';
   document.getElementById('model-sheet').classList.add('open');
 }
@@ -1269,14 +1286,18 @@ function closeModelSheet() {
 function closeModelSheetIfBackdrop(ev) {
   if (ev.target === document.getElementById('model-sheet')) closeModelSheet();
 }
-function modelMoldsStep(delta) {
-  modelMoldsVal = Math.max(1, modelMoldsVal + delta);
-  document.getElementById('model-molds-val').textContent = modelMoldsVal;
+function modelMoldsSet(val) {
+  modelMoldsVal = Math.max(1, Math.min(9999, Math.floor(+val) || 1));
+  const el = document.getElementById('model-molds-val');
+  if (el) el.value = modelMoldsVal;
 }
+function modelMoldsStep(delta) { modelMoldsSet(modelMoldsVal + delta); }
 async function saveModelSheet() {
   const name = document.getElementById('model-name-input').value.trim();
   const err  = document.getElementById('model-sheet-error');
   if (!name) { err.textContent = 'Nom requis'; return; }
+  // Lire la valeur saisie à la main si modifiée
+  modelMoldsVal = Math.max(1, parseInt(document.getElementById('model-molds-val').value) || modelMoldsVal);
 
   // Si nom modifié, supprimer l'ancien
   if (modelOrigName && modelOrigName !== name) {

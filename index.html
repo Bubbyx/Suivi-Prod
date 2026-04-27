@@ -189,6 +189,15 @@
     }
     .stepper button:active { opacity: .7; }
     .stepper span { font-size: 18px; font-weight: 600; min-width: 28px; text-align: center; }
+    .stepper-input {
+      font-size: 18px; font-weight: 600; width: 54px; text-align: center;
+      border: 1px solid var(--sep); border-radius: 8px; padding: 3px 4px;
+      background: var(--card); color: var(--text); outline: none;
+      -moz-appearance: textfield;
+    }
+    .stepper-input:focus { border-color: var(--blue); }
+    .stepper-input::-webkit-outer-spin-button,
+    .stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; }
     .segment-control { display: flex; background: var(--card); border-radius: 12px; padding: 2px; }
     .segment-control button {
       flex: 1; padding: 8px 4px; border: none; border-radius: 10px;
@@ -563,7 +572,8 @@
           <label>Moules par série</label>
           <div class="stepper">
             <button onclick="modelMoldsStep(-1)">−</button>
-            <span id="model-molds-val">27</span>
+            <input type="number" id="model-molds-val" class="stepper-input" value="27" min="1" max="9999"
+              onfocus="this.select()" onchange="modelMoldsSet(+this.value)" />
             <button onclick="modelMoldsStep(1)">+</button>
           </div>
         </div>
