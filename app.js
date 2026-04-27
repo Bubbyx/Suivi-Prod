@@ -353,6 +353,7 @@ async function showApp() {
   });
   updateOfflineIndicator();
   renderCurrentTab();
+  checkAutoWeeklyRecap();
 }
 
 // ─────────────────────────────────────────────
@@ -668,6 +669,7 @@ function renderEntryTab() {
         <div class="entry-row-info">
           <div class="entry-model">${model} ${pendBadge}</div>
           <div class="entry-detail">${e.series_count} × ${e.molds_per_series} = <strong>${e.totalPieces} moules</strong>${rejectTxt}</div>
+          ${e.note ? `<div class="entry-note">${e.note}</div>` : ''}
         </div>
         <div class="entry-row-btns">
           ${!e._pending ? `<button class="entry-btn" onclick="openEditSheet('${e.id}')">✏️</button>` : ''}
@@ -706,7 +708,7 @@ function setEntryDate(dateStr) {
 // ─────────────────────────────────────────────
 let entrySheetMode = 'add';
 let editingEntryId = null;
-let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0 };
+let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0, note: '' };
 
 function openAddSheet() {
   entrySheetMode = 'add';
@@ -714,7 +716,7 @@ function openAddSheet() {
   // Fallback cache si productModels vide (ex: première ouverture hors ligne)
   if (!productModels.length) productModels = cacheGet('cache_models') || [];
   const m = productModels[0];
-  entry = { modelName: m?.name || null, moldsPerSeries: m?.molds_per_series || 27, seriesCount: 1, rejects: 0 };
+  entry = { modelName: m?.name || null, moldsPerSeries: m?.molds_per_series || 27, seriesCount: 1, rejects: 0, note: '' };
   document.getElementById('sheet-title').textContent = 'Nouvelle saisie';
   document.getElementById('sheet-save-btn').textContent = 'Ajouter';
   renderSheetForm();
@@ -730,7 +732,8 @@ function openEditSheet(id) {
     modelName:      e.product_model_name || productModels[0]?.name,
     moldsPerSeries: e.molds_per_series,
     seriesCount:    e.series_count,
-    rejects:        e.rejects
+    rejects:        e.rejects,
+    note:           e.note || ''
   };
   document.getElementById('sheet-title').textContent = 'Modifier la saisie';
   document.getElementById('sheet-save-btn').textContent = 'Enregistrer';
@@ -805,6 +808,19 @@ function renderSheetForm() {
           </div>
         </div>
       </div>
+      <div class="form-row">
+        <div class="form-field" style="flex-direction:column;align-items:flex-start;gap:6px">
+          <label>Note (optionnel)</label>
+          <textarea id="sh-note" oninput="entry.note=this.value"
+            placeholder="Ex : arrêt machine, changement moule…"
+            style="width:100%;min-height:60px;border:1px solid var(--sep);border-radius:10px;
+                   padding:8px 10px;font-size:14px;font-family:inherit;background:var(--bg);
+                   color:var(--text);resize:vertical;outline:none"
+            onfocus="this.style.borderColor='var(--blue)'"
+            onblur="this.style.borderColor='var(--sep)'"
+          >${entry.note || ''}</textarea>
+        </div>
+      </div>
       <div id="sheet-fb" style="text-align:center;font-size:14px;color:var(--red);min-height:18px"></div>
     </div>`;
 }
@@ -849,7 +865,8 @@ async function saveEntrySheet() {
     const body    = {
       id, user_visa: myVisa, date: dateISO,
       series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
-      rejects: entry.rejects, product_model_name: entry.modelName
+      rejects: entry.rejects, product_model_name: entry.modelName,
+      note: entry.note || null
     };
     const enriched = { ...body, dateObj: new Date(dateISO), totalPieces: entry.seriesCount * entry.moldsPerSeries };
 
@@ -892,7 +909,8 @@ async function saveEntrySheet() {
     const body = {
       id: editingEntryId, user_visa: myVisa, date: existing.date,
       series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
-      rejects: entry.rejects, product_model_name: entry.modelName
+      rejects: entry.rejects, product_model_name: entry.modelName,
+      note: entry.note || null
     };
     const ok = await sbUpsert('production_entries', body);
     if (ok) {
@@ -1105,6 +1123,82 @@ function logoutBtn() {
 }
 
 // ─────────────────────────────────────────────
+//  RÉCAP DISCORD HEBDOMADAIRE
+// ─────────────────────────────────────────────
+async function sendWeeklyRecap(weekKey) {
+  // Lundi et vendredi de la semaine courante
+  const now = new Date();
+  const dow = now.getDay(); // 0=dim
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  monday.setHours(0, 0, 0, 0);
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+
+  const monISO = monday.toISOString().split('T')[0];
+  const friISO = friday.toISOString().split('T')[0];
+
+  const entries = await sbGet(
+    `/rest/v1/production_entries?date=gte.${monISO}T00:00:00&date=lte.${friISO}T23:59:59&select=*`
+  );
+  if (!entries || !entries.length) {
+    alert('Aucune production enregistrée cette semaine.');
+    return;
+  }
+
+  // Grouper par visa
+  const byVisa = {};
+  entries.forEach(e => {
+    if (!byVisa[e.user_visa]) byVisa[e.user_visa] = { pieces: 0, rejects: 0 };
+    byVisa[e.user_visa].pieces  += e.series_count * e.molds_per_series;
+    byVisa[e.user_visa].rejects += e.rejects;
+  });
+
+  const totalTeam = Object.values(byVisa).reduce((s, v) => s + v.pieces, 0);
+  const monLabel  = monday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const friLabel  = friday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  const lines = Object.entries(byVisa)
+    .sort((a, b) => b[1].pieces - a[1].pieces)
+    .map(([visa, d], i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '👤';
+      const rate  = d.pieces > 0 ? ((d.pieces - d.rejects) / d.pieces * 100).toFixed(1) : '—';
+      return `${medal} **${visa}** — ${d.pieces} moules${d.rejects > 0 ? ` · ${d.rejects} rebuts` : ''} · ${rate}% réussite`;
+    }).join('\n');
+
+  const payload = {
+    embeds: [{
+      title: `📊 Récap semaine du ${monLabel} au ${friLabel}`,
+      description: lines + `\n\n🏭 **Total équipe : ${totalTeam} moules**`,
+      color: 5763719,
+      footer: { text: 'SuiviProduction • Récap automatique vendredi soir' }
+    }]
+  };
+
+  try {
+    const r = await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (r.ok && weekKey) localStorage.setItem(weekKey, '1');
+  } catch {}
+}
+
+function checkAutoWeeklyRecap() {
+  if (!navigator.onLine) return;
+  const now = new Date();
+  if (now.getDay() !== 5) return;       // Seulement le vendredi
+  if (now.getHours() < 17) return;      // Après 17h00
+  // Clé = date du lundi de la semaine
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - 4);
+  const weekKey = `recap_${monday.toISOString().split('T')[0]}`;
+  if (localStorage.getItem(weekKey)) return; // Déjà envoyé cette semaine
+  sendWeeklyRecap(weekKey);
+}
+
+// ─────────────────────────────────────────────
 //  ADMIN — ACCÈS
 // ─────────────────────────────────────────────
 function updateAdminLockBtn() {
@@ -1193,7 +1287,15 @@ async function renderAdmin() {
   else if (adminSubTab === 'models')    html += renderAdminModels();
   else if (adminSubTab === 'schedules') html += renderAdminSchedules();
 
-  html += `<button class="btn-danger" onclick="exitAdminMode()" style="margin-top:24px">Quitter le mode admin</button>`;
+  html += `
+    <div class="card" style="margin-top:8px">
+      <div class="card-title">Récap d'équipe</div>
+      <p style="font-size:13px;color:var(--secondary);margin-bottom:10px">Envoie le résumé de production de la semaine sur Discord.</p>
+      <button class="btn-primary" onclick="sendWeeklyRecap(null)" style="font-size:14px;padding:12px">
+        📊 Envoyer le récap de la semaine
+      </button>
+    </div>`;
+  html += `<button class="btn-danger" onclick="exitAdminMode()" style="margin-top:8px">Quitter le mode admin</button>`;
   el.innerHTML = html;
 }
 
