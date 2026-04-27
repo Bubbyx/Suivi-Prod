@@ -943,131 +943,160 @@ async function confirmDeleteEntry(id) {
 }
 
 // ─────────────────────────────────────────────
-//  STATS
+//  STATS — Calendrier
 // ─────────────────────────────────────────────
-let statsPeriod = 'week';
+let calYear  = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let selectedCalDay = todayStr();
+
+const CAL_MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const CAL_DAY_NAMES   = ['L','M','M','J','V','S','D'];
+
+function changeCalMonth(delta) {
+  calMonth += delta;
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  if (calMonth < 0)  { calMonth = 11; calYear--; }
+  renderStats();
+  // scroll to top of tab
+  document.getElementById('tab-stats').scrollTop = 0;
+}
+
+function selectCalDay(dateStr) {
+  selectedCalDay = dateStr;
+  renderStats();
+  // scroll detail into view
+  setTimeout(() => {
+    const det = document.getElementById('cal-detail');
+    if (det) det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+}
 
 function renderStats() {
-  const el = document.getElementById('tab-stats');
+  const el    = document.getElementById('tab-stats');
+  const today = todayStr();
 
-  const todayLocal = todayStr();
-  let startDateStr;
-  if (statsPeriod === 'day') {
-    startDateStr = todayLocal;
-  } else if (statsPeriod === 'week') {
-    const d = new Date(todayLocal + 'T12:00:00'); d.setDate(d.getDate() - 6);
-    startDateStr = localDateOf(d.toISOString());
-  } else {
-    const d = new Date(); startDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
-  }
+  // ── Build day totals map for this month ──
+  const firstDay    = new Date(calYear, calMonth, 1);
+  const lastDay     = new Date(calYear, calMonth + 1, 0);
+  const monthStart  = `${calYear}-${String(calMonth+1).padStart(2,'0')}-01`;
+  const monthEnd    = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(lastDay.getDate()).padStart(2,'0')}`;
 
-  const filtered = myEntries.filter(e => localDateOf(e.date) >= startDateStr);
-  const totalPieces  = filtered.reduce((s, e) => s + e.totalPieces, 0);
-  const totalRejects = filtered.reduce((s, e) => s + e.rejects, 0);
-  const rejectRate   = totalPieces > 0 ? (totalRejects / totalPieces * 100) : 0;
-
-  const byDay = {};
-  filtered.forEach(e => {
-    const key = localDateOf(e.date);
-    if (!byDay[key]) byDay[key] = { key, date: new Date(key + 'T12:00:00'), pieces: 0, rejects: 0 };
-    byDay[key].pieces  += e.totalPieces;
-    byDay[key].rejects += e.rejects;
+  const dayTotals = {};
+  myEntries.forEach(e => {
+    const d = localDateOf(e.date);
+    if (d >= monthStart && d <= monthEnd) {
+      dayTotals[d] = (dayTotals[d] || 0) + e.totalPieces;
+    }
   });
-  const days = Object.values(byDay).sort((a, b) => a.key.localeCompare(b.key));
+  const maxVal = Math.max(...Object.values(dayTotals), 1);
 
-  const byModel = {};
-  filtered.forEach(e => {
-    const key = e.product_model_name || 'Inconnu';
-    if (!byModel[key]) byModel[key] = { name: key, pieces: 0, rejects: 0 };
-    byModel[key].pieces  += e.totalPieces;
-    byModel[key].rejects += e.rejects;
-  });
-  const models = Object.values(byModel).sort((a, b) => b.pieces - a.pieces);
-
-  const best = days.reduce((b, d) => d.pieces > (b?.pieces ?? 0) ? d : b, null);
-  const avg  = days.length ? (totalPieces / days.length).toFixed(0) : 0;
-
-  const periods = [['day', "Aujourd'hui"], ['week', '7 derniers jours'], ['month', 'Ce mois']];
+  // ── Calendar header ──
+  const nowDate  = new Date();
+  const isNowMonth = calYear === nowDate.getFullYear() && calMonth === nowDate.getMonth();
+  const isPast   = calYear < nowDate.getFullYear() || (calYear === nowDate.getFullYear() && calMonth < nowDate.getMonth());
 
   let html = `
-    <div class="segment-control" style="margin-bottom:16px">
-      ${periods.map(([k, l]) => `<button class="${statsPeriod===k?'active':''}" onclick="setStatsPeriod('${k}')">${l}</button>`).join('')}
-    </div>`;
+    <div class="cal-nav">
+      <button onclick="changeCalMonth(-1)">‹</button>
+      <span>${CAL_MONTH_NAMES[calMonth]} ${calYear}</span>
+      <button onclick="changeCalMonth(1)" ${isNowMonth ? 'disabled' : ''}>›</button>
+    </div>
+    <div class="cal-grid">
+      ${CAL_DAY_NAMES.map(d => `<div class="cal-header-cell">${d}</div>`).join('')}`;
 
-  if (!filtered.length) {
-    html += emptyState('Aucune donnée', 'Aucune production enregistrée sur cette période');
-    html += logoutBtn();
-    el.innerHTML = html; return;
+  // Empty cells before first day (Mon = 0)
+  let startDow = (firstDay.getDay() + 6) % 7;
+  for (let i = 0; i < startDow; i++) html += `<div></div>`;
+
+  // Day cells
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const dateStr    = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isFuture   = dateStr > today;
+    const isToday    = dateStr === today;
+    const isSelected = dateStr === selectedCalDay;
+    const total      = dayTotals[dateStr] || 0;
+    const intensity  = total > 0 ? Math.max(0.15, total / maxVal) : 0;
+
+    let cls = 'cal-day';
+    if (isSelected) cls += ' cal-selected';
+    else if (isToday) cls += ' cal-today';
+    if (isFuture) cls += ' cal-future';
+
+    html += `<div class="${cls}" ${isFuture ? '' : `onclick="selectCalDay('${dateStr}')"`}>
+      <span class="cal-day-num">${d}</span>`;
+
+    if (total > 0) {
+      const alpha = (0.1 + intensity * 0.25).toFixed(2);
+      html += `<span class="cal-day-val" style="${isSelected ? '' : `background:rgba(0,122,255,${alpha})`}">${total}</span>`;
+    } else if (!isFuture) {
+      html += `<span class="cal-day-empty-dot"></span>`;
+    }
+    html += `</div>`;
   }
+  html += `</div>`;
 
-  const rateColor = rejectRate > 5 ? '#FF3B30' : rejectRate > 2 ? '#FF9500' : '#34C759';
-  html += `
-    <div class="kpi-row">
-      <div class="kpi-card"><div class="kpi-val" style="color:#007AFF">${totalPieces}</div><div class="kpi-label">Moules</div></div>
-      <div class="kpi-card"><div class="kpi-val" style="color:${totalRejects>0?'#FF3B30':'#8E8E93'}">${totalRejects}</div><div class="kpi-label">Rebuts</div></div>
-      <div class="kpi-card"><div class="kpi-val" style="color:${rateColor}">${rejectRate.toFixed(1)}%</div><div class="kpi-label">Taux rebut</div></div>
-    </div>`;
+  // ── Monthly summary strip ──
+  const monthEntries  = myEntries.filter(e => { const d = localDateOf(e.date); return d >= monthStart && d <= monthEnd; });
+  const monthPieces   = monthEntries.reduce((s,e) => s + e.totalPieces, 0);
+  const monthRejects  = monthEntries.reduce((s,e) => s + e.rejects, 0);
+  const workDays      = Object.keys(dayTotals).length;
+  const avgPerDay     = workDays ? Math.round(monthPieces / workDays) : 0;
 
-  if (statsPeriod !== 'day' && days.length > 1) {
-    const maxPieces = Math.max(...days.map(d => d.pieces), 1);
+  if (monthPieces > 0) {
+    const mRate = monthPieces > 0 ? (monthRejects / monthPieces * 100) : 0;
+    const mColor = mRate > 5 ? '#FF3B30' : mRate > 2 ? '#FF9500' : '#34C759';
     html += `
-      <div class="card">
-        <div class="card-title">Production par jour</div>
-        <div class="bar-chart">
-          ${days.map(d => {
-            const h  = Math.round((d.pieces / maxPieces) * 100);
-            const rh = Math.round((d.rejects / maxPieces) * 100);
-            const lbl = d.date.toLocaleDateString('fr-FR', { day:'numeric', month:'short' });
-            return `
-              <div class="bar-col">
-                <div class="bar-wrap">
-                  ${d.rejects > 0 ? `<div class="bar bar-rejects" style="height:${rh}%"></div>` : ''}
-                  <div class="bar bar-pieces" style="height:${h}%"></div>
-                </div>
-                <div class="bar-lbl">${lbl}</div>
-              </div>`;
-          }).join('')}
-        </div>
+      <div class="cal-month-strip">
+        <div class="cal-strip-item"><div class="cal-strip-val" style="color:#007AFF">${monthPieces}</div><div class="cal-strip-lbl">Ce mois</div></div>
+        <div class="cal-strip-sep"></div>
+        <div class="cal-strip-item"><div class="cal-strip-val">${avgPerDay}</div><div class="cal-strip-lbl">Moy/jour</div></div>
+        <div class="cal-strip-sep"></div>
+        <div class="cal-strip-item"><div class="cal-strip-val" style="color:${mColor}">${mRate.toFixed(1)}%</div><div class="cal-strip-lbl">Rebuts</div></div>
       </div>`;
   }
 
-  html += `
-    <div class="card">
-      <div class="card-title">Indicateurs</div>`;
-  if (statsPeriod !== 'day') {
-    html += `<div class="stat-row"><span>Moyenne / jour</span><span class="stat-val">${avg} moules</span></div>`;
-    if (best) {
-      const bestLbl = best.date.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
-      html += `<div class="stat-row"><span>Meilleure journée</span><div style="text-align:right"><div class="stat-val">${best.pieces} moules</div><div style="font-size:12px;color:#8E8E93">${bestLbl}</div></div></div>`;
-    }
-  }
-  html += `
-      <div class="stat-row"><span>Taux de réussite</span><span class="stat-val" style="color:#34C759">${(100-rejectRate).toFixed(1)}%</span></div>
-    </div>`;
+  // ── Selected day detail ──
+  html += `<div id="cal-detail">`;
+  const dayEntries = myEntries.filter(e => localDateOf(e.date) === selectedCalDay);
+  const dispDate   = new Date(selectedCalDay + 'T12:00:00');
+  const isSelToday = selectedCalDay === today;
+  const dateLabel  = isSelToday
+    ? "Aujourd'hui"
+    : dispDate.toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' });
+  const dateCapital = dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1);
 
-  if (models.length) {
-    const maxM = Math.max(...models.map(m => m.pieces), 1);
+  html += `<div class="cal-detail-title">${dateCapital}</div>`;
+
+  if (!dayEntries.length) {
+    html += `<div class="card" style="text-align:center;color:var(--secondary);padding:20px;font-size:14px">Aucune production ce jour</div>`;
+  } else {
+    const totalP = dayEntries.reduce((s,e) => s + e.totalPieces, 0);
+    const totalR = dayEntries.reduce((s,e) => s + e.rejects, 0);
+    const rejectRate = totalP > 0 ? (totalR / totalP * 100) : 0;
+    const rateColor  = rejectRate > 5 ? '#FF3B30' : rejectRate > 2 ? '#FF9500' : '#34C759';
+
     html += `
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-val" style="color:#007AFF">${totalP}</div><div class="kpi-label">Moules</div></div>
+        <div class="kpi-card"><div class="kpi-val" style="color:${totalR>0?'#FF3B30':'#8E8E93'}">${totalR}</div><div class="kpi-label">Rebuts</div></div>
+        <div class="kpi-card"><div class="kpi-val" style="color:${rateColor}">${(100-rejectRate).toFixed(1)}%</div><div class="kpi-label">Réussite</div></div>
+      </div>
       <div class="card">
-        <div class="card-title">Par modèle</div>
-        ${models.map(m => `
-          <div class="model-row">
-            <div class="model-header">
-              <span>${m.name}</span>
-              <span class="stat-val">${m.pieces} moules${m.rejects > 0 ? ` · <span style="color:#FF3B30">${m.rejects} rebuts</span>` : ''}</span>
+        ${dayEntries.map(e => `
+          <div class="stat-row">
+            <div>
+              <div style="font-weight:600">${e.product_model_name || 'Modèle inconnu'}</div>
+              <div style="font-size:12px;color:var(--secondary)">${e.series_count} série(s) × ${e.molds_per_series} moules${e.rejects>0?' · <span style="color:#FF3B30">'+e.rejects+' rebuts</span>':''}</div>
             </div>
-            <div class="model-bar-bg">
-              <div class="model-bar-fill" style="width:${Math.round(m.pieces/maxM*100)}%"></div>
-            </div>
+            <span class="stat-val">${e.totalPieces}</span>
           </div>`).join('')}
       </div>`;
   }
+  html += `</div>`; // end cal-detail
 
   html += logoutBtn();
   el.innerHTML = html;
 }
-
-function setStatsPeriod(p) { statsPeriod = p; renderStats(); }
 
 function logoutBtn() {
   return `<button class="btn-danger" onclick="logout()" style="margin-top:24px">Se déconnecter</button>`;
