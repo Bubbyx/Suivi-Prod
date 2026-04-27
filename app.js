@@ -17,8 +17,25 @@ let myVisa        = '';
 let pendingUser   = null;
 let schedules     = [];
 let productModels = [];
-let myEntries     = [];   // entries fetched for stats
+let myEntries     = [];
 let currentTab    = 'planning';
+
+// Admin
+let isAdminMode     = false;
+let adminVisas      = [];
+let adminUsers      = [];
+let adminSubTab     = 'visas';
+let editingSchedObj = null;
+let schedEditor     = {
+  weekStartDate: '',
+  weekType: 'Matin',
+  hideSaturday: false,
+  dayStatuses: ['', '', '', '', '', ''],
+  assignments: {}   // visa → [cat_day0, cat_day1, ..., cat_day5]
+};
+
+// Offline
+let offlineQueue = [];
 
 const CATS = [
   { key: 'ZAC1',      label: 'ZAC1',      color: '#007AFF', cls: 'cat-zac1',
@@ -67,6 +84,68 @@ async function sbDelete(path) {
 }
 
 // ─────────────────────────────────────────────
+//  DATA CACHE (localStorage)
+// ─────────────────────────────────────────────
+function cacheSet(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+}
+function cacheGet(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+
+// ─────────────────────────────────────────────
+//  OFFLINE QUEUE
+// ─────────────────────────────────────────────
+function loadOfflineQueue() {
+  try { offlineQueue = JSON.parse(localStorage.getItem('offlineQueue') || '[]'); }
+  catch { offlineQueue = []; }
+}
+
+function saveOfflineQueue() {
+  localStorage.setItem('offlineQueue', JSON.stringify(offlineQueue));
+  updateOfflineIndicator();
+}
+
+function updateOfflineIndicator() {
+  const bar   = document.getElementById('offline-bar');
+  const count = document.getElementById('offline-count');
+  if (!bar) return;
+  const isOffline = !navigator.onLine;
+  const hasQueue  = offlineQueue.length > 0;
+  bar.style.display = (isOffline || hasQueue) ? 'flex' : 'none';
+  if (isOffline && hasQueue)
+    bar.textContent = `📶 Hors ligne — ${offlineQueue.length} saisie(s) en attente de synchronisation`;
+  else if (isOffline)
+    bar.textContent = '📶 Hors ligne — les nouvelles saisies seront mises en file d\'attente';
+  else if (hasQueue)
+    bar.textContent = `🔄 Synchronisation de ${offlineQueue.length} saisie(s)…`;
+}
+
+async function processOfflineQueue() {
+  updateOfflineIndicator();
+  if (!navigator.onLine || !offlineQueue.length) return;
+  const toProcess = [...offlineQueue];
+  offlineQueue = [];
+  saveOfflineQueue();
+  const failed = [];
+  for (const item of toProcess) {
+    // Strip client-only flags before sending
+    const { _pending, dateObj, totalPieces, ...body } = item;
+    const ok = await sbUpsert('production_entries', body);
+    if (ok) {
+      // Mark as synced in myEntries
+      const e = myEntries.find(x => x.id === body.id);
+      if (e) e._pending = false;
+    } else {
+      failed.push(item);
+    }
+  }
+  offlineQueue = failed;
+  saveOfflineQueue();
+  if (currentTab === 'entry') renderEntryTab();
+}
+
+// ─────────────────────────────────────────────
 //  CRYPTO
 // ─────────────────────────────────────────────
 async function sha256(str) {
@@ -92,24 +171,22 @@ const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1495861049889525810/'
 function deviceDescription() {
   const ua = navigator.userAgent;
   let device = 'Web';
-  if      (/iPhone/.test(ua))   device = 'iPhone';
-  else if (/iPad/.test(ua))     device = 'iPad';
-  else if (/Android/.test(ua))  device = 'Android';
-  else if (/Macintosh/.test(ua))device = 'Mac';
-  else if (/Windows/.test(ua))  device = 'Windows';
-  else if (/Linux/.test(ua))    device = 'Linux';
-
+  if      (/iPhone/.test(ua))    device = 'iPhone';
+  else if (/iPad/.test(ua))      device = 'iPad';
+  else if (/Android/.test(ua))   device = 'Android';
+  else if (/Macintosh/.test(ua)) device = 'Mac';
+  else if (/Windows/.test(ua))   device = 'Windows';
+  else if (/Linux/.test(ua))     device = 'Linux';
   let browser = '';
-  if      (/CriOS/.test(ua))    browser = 'Chrome iOS';
-  else if (/FxiOS/.test(ua))    browser = 'Firefox iOS';
-  else if (/EdgA/.test(ua))     browser = 'Edge Android';
-  else if (/Edg\//.test(ua))    browser = 'Edge';
-  else if (/OPR/.test(ua))      browser = 'Opera';
-  else if (/Chrome/.test(ua))   browser = 'Chrome';
-  else if (/Firefox/.test(ua))  browser = 'Firefox';
-  else if (/Safari/.test(ua))   browser = 'Safari';
-  else                           browser = 'Navigateur';
-
+  if      (/CriOS/.test(ua))   browser = 'Chrome iOS';
+  else if (/FxiOS/.test(ua))   browser = 'Firefox iOS';
+  else if (/EdgA/.test(ua))    browser = 'Edge Android';
+  else if (/Edg\//.test(ua))   browser = 'Edge';
+  else if (/OPR/.test(ua))     browser = 'Opera';
+  else if (/Chrome/.test(ua))  browser = 'Chrome';
+  else if (/Firefox/.test(ua)) browser = 'Firefox';
+  else if (/Safari/.test(ua))  browser = 'Safari';
+  else                          browser = 'Navigateur';
   return `${device} — ${browser}`;
 }
 
@@ -142,6 +219,11 @@ async function handleLogin() {
   const visa = visaEl.value.trim().toUpperCase();
   const pass = passEl.value;
   if (!visa || !pass) return;
+
+  if (!navigator.onLine) {
+    errEl.textContent = 'Pas de connexion internet — impossible de se connecter';
+    return;
+  }
 
   btn.disabled = true; btn.textContent = 'Connexion…'; errEl.textContent = '';
 
@@ -192,6 +274,9 @@ function finishLogin(visa) {
 function logout() {
   discordLog({ title: '🚪 Déconnexion', description: `**Visa:** ${myVisa}`, color: 9807270, visa: myVisa });
   myVisa = ''; schedules = []; productModels = []; myEntries = [];
+  isAdminMode = false;
+  const adminBtn = document.getElementById('nav-admin-btn');
+  if (adminBtn) adminBtn.style.display = 'none';
   localStorage.removeItem('myVisa');
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -212,13 +297,28 @@ async function showApp() {
     sbGet('/rest/v1/product_models?select=*&order=name.asc'),
     sbGet(`/rest/v1/production_entries?user_visa=eq.${encodeURIComponent(myVisa)}&select=*&order=date.desc`)
   ]);
-  schedules     = scheds   || [];
-  productModels = models   || [];
-  myEntries     = (entries || []).map(e => ({
+
+  // Si réseau → mise à jour du cache. Sinon → fallback sur cache.
+  if (scheds  !== null) cacheSet('cache_schedules', scheds);
+  if (models  !== null) cacheSet('cache_models', models);
+  if (entries !== null) cacheSet(`cache_entries_${myVisa}`, entries);
+
+  schedules     = scheds  ?? cacheGet('cache_schedules') ?? [];
+  productModels = models  ?? cacheGet('cache_models')    ?? [];
+  const rawEntries = entries ?? cacheGet(`cache_entries_${myVisa}`) ?? [];
+
+  myEntries = rawEntries.map(e => ({
     ...e,
     dateObj: new Date(e.date),
     totalPieces: e.series_count * e.molds_per_series
   }));
+  // Merge pending offline entries that aren't yet synced
+  offlineQueue.forEach(q => {
+    if (!myEntries.find(e => e.id === q.id)) {
+      myEntries.unshift({ ...q, dateObj: new Date(q.date), totalPieces: q.series_count * q.molds_per_series, _pending: true });
+    }
+  });
+  updateOfflineIndicator();
   renderCurrentTab();
 }
 
@@ -231,8 +331,8 @@ function showTab(tab, btn) {
   document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
   document.getElementById(`tab-${tab}`).classList.add('active');
   if (btn) btn.classList.add('active');
-  const titles = { planning: 'Planning', myweek: 'Ma semaine', entry: 'Saisie', stats: 'Statistiques' };
-  document.getElementById('header-title').textContent = titles[tab];
+  const titles = { planning: 'Planning', myweek: 'Ma semaine', entry: 'Saisie', stats: 'Statistiques', admin: 'Admin' };
+  document.getElementById('header-title').textContent = titles[tab] || tab;
   renderCurrentTab();
 }
 
@@ -241,20 +341,30 @@ function renderCurrentTab() {
   else if (currentTab === 'myweek')   renderMyWeek();
   else if (currentTab === 'entry')    renderEntry();
   else if (currentTab === 'stats')    refreshAndRenderStats();
+  else if (currentTab === 'admin')    renderAdmin();
 }
 
 async function refreshAndRenderStats() {
-  // Affiche un loader puis fetch les dernières saisies depuis Supabase
+  // Hors ligne → données en mémoire suffisent
+  if (!navigator.onLine) { renderStats(); return; }
+
   document.getElementById('tab-stats').innerHTML =
     '<div class="spinner-wrap"><div class="spinner"></div></div>';
   const rows = await sbGet(
     `/rest/v1/production_entries?user_visa=eq.${encodeURIComponent(myVisa)}&select=*&order=date.desc`
   );
-  myEntries = (rows || []).map(e => ({
-    ...e,
-    dateObj:     new Date(e.date),
-    totalPieces: e.series_count * e.molds_per_series
-  }));
+  if (rows !== null) {
+    cacheSet(`cache_entries_${myVisa}`, rows);
+    myEntries = rows.map(e => ({
+      ...e, dateObj: new Date(e.date), totalPieces: e.series_count * e.molds_per_series
+    }));
+  }
+  // Re-merge pending
+  offlineQueue.forEach(q => {
+    if (!myEntries.find(e => e.id === q.id)) {
+      myEntries.unshift({ ...q, dateObj: new Date(q.date), totalPieces: q.series_count * q.molds_per_series, _pending: true });
+    }
+  });
   renderStats();
 }
 
@@ -306,8 +416,6 @@ function scheduleCard(s) {
   const dayCount = p.hideSaturday ? 5 : 6;
   const statuses = STATUS_KEYS.slice(0, dayCount).map(k => p[k] || '');
 
-  // Calcul de la date de chaque jour à partir du lundi de la semaine
-  // localDateOf() convertit le timestamp UTC en date locale (évite le décalage UTC+2)
   const mon = new Date(localDateOf(s.week_start_date) + 'T12:00:00');
   const dayHeaders = DAY_LABELS.slice(0, dayCount).map((lbl, i) => {
     const d = new Date(mon); d.setDate(mon.getDate() + i);
@@ -394,6 +502,13 @@ function renderMyWeek() {
   let html = sectionHeader(weekLabel(s));
   days.forEach(({ label, date, cat, colleagues }) => {
     const isWorking = cat.key === 'ZAC1' || cat.key === 'ZAC2';
+
+    // Production de ce jour
+    const dayStr = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    const dayEntries = myEntries.filter(e => localDateOf(e.date) === dayStr);
+    const dayTotal   = dayEntries.reduce((s, e) => s + e.totalPieces, 0);
+    const dayPending = dayEntries.some(e => e._pending);
+
     html += `
       <div class="my-day-card">
         <div class="my-day-date">
@@ -406,6 +521,7 @@ function renderMyWeek() {
           <div class="my-day-cat" style="color:${cat.color}">${cat.label}</div>
           ${isWorking ? `<div class="my-day-end">Fin à ${shiftEnd}</div>` : ''}
           ${colleagues.length ? `<div class="my-day-colleagues">Avec : ${colleagues.join(', ')}</div>` : ''}
+          ${dayTotal > 0 ? `<div class="my-day-production" style="color:var(--blue)">${dayTotal} moules${dayPending ? ' ⏳' : ''}</div>` : ''}
         </div>
       </div>`;
   });
@@ -415,9 +531,6 @@ function renderMyWeek() {
 // ─────────────────────────────────────────────
 //  SAISIE — TAB (liste + navigation date)
 // ─────────────────────────────────────────────
-
-// Retourne "YYYY-MM-DD" dans le fuseau LOCAL du navigateur
-// (évite le décalage UTC+2 qui décalerait tout d'un jour)
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -429,7 +542,11 @@ function localDateOf(isoStr) {
 
 let selectedEntryDate = todayStr();
 
-function renderEntry() { refreshEntryTab(); }
+function renderEntry() {
+  // Hors ligne → on utilise directement les données en mémoire (du cache)
+  if (!navigator.onLine) { renderEntryTab(); return; }
+  refreshEntryTab();
+}
 
 async function refreshEntryTab() {
   const el = document.getElementById('tab-entry');
@@ -437,9 +554,18 @@ async function refreshEntryTab() {
   const rows = await sbGet(
     `/rest/v1/production_entries?user_visa=eq.${encodeURIComponent(myVisa)}&select=*&order=date.desc`
   );
-  myEntries = (rows || []).map(e => ({
-    ...e, dateObj: new Date(e.date), totalPieces: e.series_count * e.molds_per_series
-  }));
+  if (rows !== null) {
+    cacheSet(`cache_entries_${myVisa}`, rows);
+    myEntries = rows.map(e => ({
+      ...e, dateObj: new Date(e.date), totalPieces: e.series_count * e.molds_per_series
+    }));
+  }
+  // Re-merge pending queue
+  offlineQueue.forEach(q => {
+    if (!myEntries.find(e => e.id === q.id)) {
+      myEntries.unshift({ ...q, dateObj: new Date(q.date), totalPieces: q.series_count * q.molds_per_series, _pending: true });
+    }
+  });
   renderEntryTab();
 }
 
@@ -453,7 +579,6 @@ function renderEntryTab() {
   const successRate  = totalPieces > 0 ? Math.round((totalPieces - totalRejects) / totalPieces * 100) : null;
   const isToday      = selectedEntryDate === today;
 
-  // Date display — use noon local time to avoid timezone edge cases
   const displayDate = new Date(selectedEntryDate + 'T12:00:00');
   const dateLabel   = isToday
     ? "Aujourd'hui"
@@ -496,14 +621,15 @@ function renderEntryTab() {
       const model     = e.product_model_name || 'Inconnu';
       const rejectTxt = e.rejects > 0 ? ` · ${e.rejects} rebut${e.rejects > 1 ? 's' : ''}` : '';
       const sep       = i < dayEntries.length - 1 ? 'entry-row-sep' : '';
+      const pendBadge = e._pending ? '<span class="pending-badge">⏳</span>' : '';
       html += `
-      <div class="entry-row ${sep}">
+      <div class="entry-row ${sep}${e._pending ? ' entry-pending' : ''}">
         <div class="entry-row-info">
-          <div class="entry-model">${model}</div>
+          <div class="entry-model">${model} ${pendBadge}</div>
           <div class="entry-detail">${e.series_count} × ${e.molds_per_series} = <strong>${e.totalPieces} moules</strong>${rejectTxt}</div>
         </div>
         <div class="entry-row-btns">
-          <button class="entry-btn" onclick="openEditSheet('${e.id}')">✏️</button>
+          ${!e._pending ? `<button class="entry-btn" onclick="openEditSheet('${e.id}')">✏️</button>` : ''}
           <button class="entry-btn entry-btn-del" onclick="confirmDeleteEntry('${e.id}')">🗑</button>
         </div>
       </div>`;
@@ -537,7 +663,7 @@ function setEntryDate(dateStr) {
 // ─────────────────────────────────────────────
 //  SAISIE — SHEET (add / edit)
 // ─────────────────────────────────────────────
-let entrySheetMode = 'add';  // 'add' | 'edit'
+let entrySheetMode = 'add';
 let editingEntryId = null;
 let entry = { modelName: null, moldsPerSeries: 27, seriesCount: 1, rejects: 0 };
 
@@ -659,21 +785,40 @@ async function saveEntrySheet() {
 
   if (entrySheetMode === 'add') {
     const id      = crypto.randomUUID();
-    const dateISO = new Date(selectedEntryDate + 'T00:00:00').toISOString(); // minuit local → UTC
+    const dateISO = new Date(selectedEntryDate + 'T00:00:00').toISOString();
     const body    = {
       id, user_visa: myVisa, date: dateISO,
       series_count: entry.seriesCount, molds_per_series: entry.moldsPerSeries,
       rejects: entry.rejects, product_model_name: entry.modelName
     };
+    const enriched = { ...body, dateObj: new Date(dateISO), totalPieces: entry.seriesCount * entry.moldsPerSeries };
+
+    // Mode hors ligne → file d'attente
+    if (!navigator.onLine) {
+      offlineQueue.push(body);
+      saveOfflineQueue();
+      myEntries.unshift({ ...enriched, _pending: true });
+      closeEntrySheet();
+      renderEntryTab();
+      return;
+    }
+
     const ok = await sbUpsert('production_entries', body);
     if (ok) {
-      myEntries.unshift({ ...body, dateObj: new Date(dateISO), totalPieces: entry.seriesCount * entry.moldsPerSeries });
+      myEntries.unshift(enriched);
       const total = entry.seriesCount * entry.moldsPerSeries;
       let desc = `**Modèle:** ${entry.modelName}\n**Séries:** ${entry.seriesCount} × ${entry.moldsPerSeries} = **${total} moules**`;
       if (entry.rejects > 0) desc += `\n**Rebuts:** ${entry.rejects}`;
       const d = new Date(selectedEntryDate + 'T12:00:00');
       desc += `\n**Date:** ${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
       discordLog({ title: '✅ Saisie ajoutée', description: desc, color: 5763719, visa: myVisa });
+      closeEntrySheet();
+      renderEntryTab();
+    } else if (!navigator.onLine) {
+      // Connexion perdue pendant la requête → queue
+      offlineQueue.push(body);
+      saveOfflineQueue();
+      myEntries.unshift({ ...enriched, _pending: true });
       closeEntrySheet();
       renderEntryTab();
     } else {
@@ -710,8 +855,20 @@ async function saveEntrySheet() {
 }
 
 async function confirmDeleteEntry(id) {
+  const e = myEntries.find(x => x.id === id);
+  if (!e) return;
+
+  // Entrée en attente → suppression locale uniquement
+  if (e._pending) {
+    if (!confirm('Supprimer cette saisie (non encore synchronisée) ?')) return;
+    offlineQueue = offlineQueue.filter(q => q.id !== id);
+    saveOfflineQueue();
+    myEntries = myEntries.filter(x => x.id !== id);
+    renderEntryTab();
+    return;
+  }
+
   if (!confirm('Supprimer cette saisie ?')) return;
-  const e       = myEntries.find(x => x.id === id);
   const encoded = encodeURIComponent(id);
   const ok      = await sbDelete(`/rest/v1/production_entries?id=eq.${encoded}`);
   if (ok) {
@@ -735,7 +892,6 @@ let statsPeriod = 'week';
 function renderStats() {
   const el = document.getElementById('tab-stats');
 
-  // Calcul de la date de début en chaîne locale YYYY-MM-DD (évite le décalage UTC)
   const todayLocal = todayStr();
   let startDateStr;
   if (statsPeriod === 'day') {
@@ -747,13 +903,11 @@ function renderStats() {
     const d = new Date(); startDateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
   }
 
-  // Filtrage par date locale (pas par dateObj qui est en UTC)
   const filtered = myEntries.filter(e => localDateOf(e.date) >= startDateStr);
   const totalPieces  = filtered.reduce((s, e) => s + e.totalPieces, 0);
   const totalRejects = filtered.reduce((s, e) => s + e.rejects, 0);
   const rejectRate   = totalPieces > 0 ? (totalRejects / totalPieces * 100) : 0;
 
-  // Group by local day
   const byDay = {};
   filtered.forEach(e => {
     const key = localDateOf(e.date);
@@ -763,7 +917,6 @@ function renderStats() {
   });
   const days = Object.values(byDay).sort((a, b) => a.key.localeCompare(b.key));
 
-  // Group by model
   const byModel = {};
   filtered.forEach(e => {
     const key = e.product_model_name || 'Inconnu';
@@ -773,14 +926,12 @@ function renderStats() {
   });
   const models = Object.values(byModel).sort((a, b) => b.pieces - a.pieces);
 
-  // Best day
   const best = days.reduce((b, d) => d.pieces > (b?.pieces ?? 0) ? d : b, null);
   const avg  = days.length ? (totalPieces / days.length).toFixed(0) : 0;
 
   const periods = [['day', "Aujourd'hui"], ['week', '7 derniers jours'], ['month', 'Ce mois']];
 
   let html = `
-    <!-- Period picker -->
     <div class="segment-control" style="margin-bottom:16px">
       ${periods.map(([k, l]) => `<button class="${statsPeriod===k?'active':''}" onclick="setStatsPeriod('${k}')">${l}</button>`).join('')}
     </div>`;
@@ -791,7 +942,6 @@ function renderStats() {
     el.innerHTML = html; return;
   }
 
-  // KPI cards
   const rateColor = rejectRate > 5 ? '#FF3B30' : rejectRate > 2 ? '#FF9500' : '#34C759';
   html += `
     <div class="kpi-row">
@@ -800,7 +950,6 @@ function renderStats() {
       <div class="kpi-card"><div class="kpi-val" style="color:${rateColor}">${rejectRate.toFixed(1)}%</div><div class="kpi-label">Taux rebut</div></div>
     </div>`;
 
-  // Bar chart (show only if > 1 day and not "today" period)
   if (statsPeriod !== 'day' && days.length > 1) {
     const maxPieces = Math.max(...days.map(d => d.pieces), 1);
     html += `
@@ -824,24 +973,20 @@ function renderStats() {
       </div>`;
   }
 
-  // Indicateurs
   html += `
     <div class="card">
       <div class="card-title">Indicateurs</div>`;
   if (statsPeriod !== 'day') {
-    html += `
-      <div class="stat-row"><span>Moyenne / jour</span><span class="stat-val">${avg} moules</span></div>`;
+    html += `<div class="stat-row"><span>Moyenne / jour</span><span class="stat-val">${avg} moules</span></div>`;
     if (best) {
       const bestLbl = best.date.toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'short' });
-      html += `
-        <div class="stat-row"><span>Meilleure journée</span><div style="text-align:right"><div class="stat-val">${best.pieces} moules</div><div style="font-size:12px;color:#8E8E93">${bestLbl}</div></div></div>`;
+      html += `<div class="stat-row"><span>Meilleure journée</span><div style="text-align:right"><div class="stat-val">${best.pieces} moules</div><div style="font-size:12px;color:#8E8E93">${bestLbl}</div></div></div>`;
     }
   }
   html += `
       <div class="stat-row"><span>Taux de réussite</span><span class="stat-val" style="color:#34C759">${(100-rejectRate).toFixed(1)}%</span></div>
     </div>`;
 
-  // Par modèle
   if (models.length) {
     const maxM = Math.max(...models.map(m => m.pieces), 1);
     html += `
@@ -871,6 +1016,489 @@ function logoutBtn() {
 }
 
 // ─────────────────────────────────────────────
+//  ADMIN — ACCÈS
+// ─────────────────────────────────────────────
+function openAdminLoginSheet() {
+  document.getElementById('admin-login-sheet').classList.add('open');
+  document.getElementById('admin-pass-input').value = '';
+  document.getElementById('admin-pass-error').textContent = '';
+}
+function closeAdminLoginSheet() {
+  document.getElementById('admin-login-sheet').classList.remove('open');
+}
+function closeAdminLoginIfBackdrop(ev) {
+  if (ev.target === document.getElementById('admin-login-sheet')) closeAdminLoginSheet();
+}
+function handleAdminLogin() {
+  const pw = document.getElementById('admin-pass-input').value;
+  if (pw === 'admin1234') {
+    isAdminMode = true;
+    closeAdminLoginSheet();
+    const btn = document.getElementById('nav-admin-btn');
+    btn.style.display = 'flex';
+    showTab('admin', btn);
+  } else {
+    document.getElementById('admin-pass-error').textContent = 'Mot de passe incorrect';
+    document.getElementById('admin-pass-input').value = '';
+  }
+}
+function exitAdminMode() {
+  isAdminMode = false;
+  document.getElementById('nav-admin-btn').style.display = 'none';
+  const firstBtn = document.querySelector('nav button:not(#nav-admin-btn)');
+  showTab('planning', firstBtn);
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — RENDER PRINCIPAL
+// ─────────────────────────────────────────────
+async function renderAdmin() {
+  const el = document.getElementById('tab-admin');
+  el.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+
+  const [visas, users] = await Promise.all([
+    sbGet('/rest/v1/visas?select=*&order=identifier.asc'),
+    sbGet('/rest/v1/app_users?select=visa,must_change_password&order=visa.asc')
+  ]);
+  adminVisas = visas || [];
+  adminUsers = users || [];
+
+  const tabs = [
+    { key: 'visas',     label: 'Membres'   },
+    { key: 'models',    label: 'Modèles'   },
+    { key: 'schedules', label: 'Plannings' },
+  ];
+  let html = `
+    <div class="segment-control" style="margin-bottom:16px">
+      ${tabs.map(t => `<button class="${adminSubTab===t.key?'active':''}" onclick="setAdminSubTab('${t.key}')">${t.label}</button>`).join('')}
+    </div>`;
+
+  if      (adminSubTab === 'visas')     html += renderAdminVisas();
+  else if (adminSubTab === 'models')    html += renderAdminModels();
+  else if (adminSubTab === 'schedules') html += renderAdminSchedules();
+
+  html += `<button class="btn-danger" onclick="exitAdminMode()" style="margin-top:24px">Quitter le mode admin</button>`;
+  el.innerHTML = html;
+}
+
+function setAdminSubTab(tab) { adminSubTab = tab; renderAdmin(); }
+
+// ─────────────────────────────────────────────
+//  ADMIN — VISAS / MEMBRES
+// ─────────────────────────────────────────────
+function renderAdminVisas() {
+  let html = `
+    <div class="admin-section-hd">
+      <div class="section-header" style="margin:0">Membres (${adminVisas.length})</div>
+      <button class="admin-add-btn" onclick="openAddVisaSheet()">+ Ajouter</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">`;
+
+  if (!adminVisas.length) {
+    html += `<div class="entry-row"><span style="color:var(--secondary)">Aucun membre</span></div>`;
+  } else {
+    adminVisas.forEach((v, i) => {
+      const user = adminUsers.find(u => u.visa === v.identifier);
+      const sep  = i < adminVisas.length - 1 ? 'entry-row-sep' : '';
+      let badge  = '';
+      if (user) {
+        badge = user.must_change_password
+          ? '<span class="abadge abadge-warn">1ère connexion</span>'
+          : '<span class="abadge abadge-ok">Actif</span>';
+      } else {
+        badge = '<span class="abadge abadge-sec">Pas de compte</span>';
+      }
+      html += `
+        <div class="entry-row ${sep}">
+          <div class="entry-row-info">
+            <div class="entry-model">${v.identifier} ${badge}</div>
+            ${user?.must_change_password ? '<div class="entry-detail">Mot de passe par défaut : 0000</div>' : ''}
+          </div>
+          <div class="entry-row-btns">
+            ${user
+              ? `<button class="entry-btn" title="Réinitialiser MDP" onclick="adminResetPassword('${v.identifier}')">🔄</button>`
+              : `<button class="entry-btn" title="Créer compte" onclick="adminCreateAccount('${v.identifier}')">➕</button>`}
+            <button class="entry-btn entry-btn-del" onclick="adminDeleteVisa('${v.identifier}')">🗑</button>
+          </div>
+        </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+function openAddVisaSheet() {
+  document.getElementById('add-visa-sheet').classList.add('open');
+  document.getElementById('add-visa-input').value = '';
+  document.getElementById('add-visa-error').textContent = '';
+}
+function closeAddVisaSheet() {
+  document.getElementById('add-visa-sheet').classList.remove('open');
+}
+function closeAddVisaIfBackdrop(ev) {
+  if (ev.target === document.getElementById('add-visa-sheet')) closeAddVisaSheet();
+}
+async function saveAddVisa() {
+  const id  = document.getElementById('add-visa-input').value.trim().toUpperCase();
+  const err = document.getElementById('add-visa-error');
+  if (!id || id.length < 2) { err.textContent = 'Visa invalide (min 2 caractères)'; return; }
+  if (adminVisas.find(v => v.identifier === id)) { err.textContent = 'Ce visa existe déjà'; return; }
+
+  const DEFAULT_HASH = '9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0'; // SHA256("0000")
+  const [okV, okU] = await Promise.all([
+    sbUpsert('visas', { identifier: id }),
+    sbUpsert('app_users', { visa: id, password_hash: DEFAULT_HASH, must_change_password: true })
+  ]);
+  if (okV) {
+    adminVisas.push({ identifier: id });
+    adminVisas.sort((a, b) => a.identifier.localeCompare(b.identifier));
+    if (okU) adminUsers.push({ visa: id, must_change_password: true });
+    closeAddVisaSheet();
+    renderAdmin();
+    discordLog({ title: '👤 Membre ajouté', description: `Visa **${id}** créé (MDP: 0000)`, color: 5763719, visa: myVisa });
+  } else {
+    err.textContent = "Erreur lors de l'ajout";
+  }
+}
+async function adminDeleteVisa(id) {
+  if (!confirm(`Supprimer le membre ${id} et son compte ?\nSes saisies seront conservées.`)) return;
+  await Promise.all([
+    sbDelete(`/rest/v1/visas?identifier=eq.${encodeURIComponent(id)}`),
+    sbDelete(`/rest/v1/app_users?visa=eq.${encodeURIComponent(id)}`)
+  ]);
+  adminVisas = adminVisas.filter(v => v.identifier !== id);
+  adminUsers = adminUsers.filter(u => u.visa !== id);
+  renderAdmin();
+  discordLog({ title: '🗑️ Membre supprimé', description: `Visa **${id}** supprimé`, color: 15548997, visa: myVisa });
+}
+async function adminResetPassword(visa) {
+  if (!confirm(`Réinitialiser le mot de passe de ${visa} ?\nIl devra se connecter avec le code 0000.`)) return;
+  const hash = '9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0';
+  const ok   = await sbUpsert('app_users', { visa, password_hash: hash, must_change_password: true });
+  if (ok) {
+    const u = adminUsers.find(u => u.visa === visa);
+    if (u) u.must_change_password = true;
+    renderAdmin();
+  }
+}
+async function adminCreateAccount(visa) {
+  const hash = '9af15b336e6a9619928537df30b2e6a2376569fcf9d7e773eccede65606529a0';
+  const ok   = await sbUpsert('app_users', { visa, password_hash: hash, must_change_password: true });
+  if (ok) {
+    adminUsers.push({ visa, must_change_password: true });
+    renderAdmin();
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — MODÈLES
+// ─────────────────────────────────────────────
+function renderAdminModels() {
+  let html = `
+    <div class="admin-section-hd">
+      <div class="section-header" style="margin:0">Modèles (${productModels.length})</div>
+      <button class="admin-add-btn" onclick="openModelSheet(null)">+ Ajouter</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">`;
+
+  if (!productModels.length) {
+    html += `<div class="entry-row"><span style="color:var(--secondary)">Aucun modèle</span></div>`;
+  } else {
+    productModels.forEach((m, i) => {
+      const sep = i < productModels.length - 1 ? 'entry-row-sep' : '';
+      html += `
+        <div class="entry-row ${sep}">
+          <div class="entry-row-info">
+            <div class="entry-model">${m.name}</div>
+            <div class="entry-detail">${m.molds_per_series} moules par série</div>
+          </div>
+          <div class="entry-row-btns">
+            <button class="entry-btn" onclick="openModelSheet('${m.name}')">✏️</button>
+            <button class="entry-btn entry-btn-del" onclick="adminDeleteModel('${m.name}')">🗑</button>
+          </div>
+        </div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
+let modelOrigName = null;
+let modelMoldsVal = 27;
+
+function openModelSheet(name) {
+  modelOrigName = name;
+  const m = name ? productModels.find(x => x.name === name) : null;
+  modelMoldsVal = m ? m.molds_per_series : 27;
+  document.getElementById('model-sheet-title').textContent = name ? 'Modifier le modèle' : 'Nouveau modèle';
+  document.getElementById('model-name-input').value = m?.name || '';
+  document.getElementById('model-molds-val').textContent = modelMoldsVal;
+  document.getElementById('model-sheet-error').textContent = '';
+  document.getElementById('model-sheet').classList.add('open');
+}
+function closeModelSheet() {
+  document.getElementById('model-sheet').classList.remove('open');
+}
+function closeModelSheetIfBackdrop(ev) {
+  if (ev.target === document.getElementById('model-sheet')) closeModelSheet();
+}
+function modelMoldsStep(delta) {
+  modelMoldsVal = Math.max(1, modelMoldsVal + delta);
+  document.getElementById('model-molds-val').textContent = modelMoldsVal;
+}
+async function saveModelSheet() {
+  const name = document.getElementById('model-name-input').value.trim();
+  const err  = document.getElementById('model-sheet-error');
+  if (!name) { err.textContent = 'Nom requis'; return; }
+
+  // Si nom modifié, supprimer l'ancien
+  if (modelOrigName && modelOrigName !== name) {
+    await sbDelete(`/rest/v1/product_models?name=eq.${encodeURIComponent(modelOrigName)}`);
+    productModels = productModels.filter(m => m.name !== modelOrigName);
+  }
+  const ok = await sbUpsert('product_models', { name, molds_per_series: modelMoldsVal });
+  if (ok) {
+    const idx = productModels.findIndex(m => m.name === name);
+    if (idx >= 0) productModels[idx] = { name, molds_per_series: modelMoldsVal };
+    else { productModels.push({ name, molds_per_series: modelMoldsVal }); productModels.sort((a, b) => a.name.localeCompare(b.name)); }
+    closeModelSheet();
+    renderAdmin();
+  } else {
+    err.textContent = "Erreur d'enregistrement";
+  }
+}
+async function adminDeleteModel(name) {
+  if (!confirm(`Supprimer le modèle "${name}" ?`)) return;
+  await sbDelete(`/rest/v1/product_models?name=eq.${encodeURIComponent(name)}`);
+  productModels = productModels.filter(m => m.name !== name);
+  renderAdmin();
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — PLANNINGS
+// ─────────────────────────────────────────────
+function renderAdminSchedules() {
+  let html = `
+    <div class="admin-section-hd">
+      <div class="section-header" style="margin:0">Plannings (${schedules.length})</div>
+      <button class="admin-add-btn" onclick="openScheduleEditor(null)">+ Ajouter</button>
+    </div>`;
+
+  if (!schedules.length) {
+    html += emptyState('Aucun planning', 'Aucun planning créé');
+  } else {
+    html += `<div class="card" style="padding:0;overflow:hidden">`;
+    schedules.forEach((s, i) => {
+      const sep  = i < schedules.length - 1 ? 'entry-row-sep' : '';
+      const type = s.week_type === 'Matin' ? '🌅 Matin' : '🌆 Après-midi';
+      const key  = localDateOf(s.week_start_date);
+      html += `
+        <div class="entry-row ${sep}">
+          <div class="entry-row-info">
+            <div class="entry-model">${weekLabel(s)}</div>
+            <div class="entry-detail">${type}</div>
+          </div>
+          <div class="entry-row-btns">
+            <button class="entry-btn" onclick="openScheduleEditor('${key}')">✏️</button>
+            <button class="entry-btn entry-btn-del" onclick="adminDeleteSchedule('${key}')">🗑</button>
+          </div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
+}
+
+async function adminDeleteSchedule(weekDateStr) {
+  const s = schedules.find(x => localDateOf(x.week_start_date) === weekDateStr);
+  if (!s || !confirm('Supprimer ce planning ?')) return;
+  await sbDelete(`/rest/v1/week_schedules?week_start_date=eq.${encodeURIComponent(s.week_start_date)}`);
+  schedules = schedules.filter(x => localDateOf(x.week_start_date) !== weekDateStr);
+  renderAdmin();
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — ÉDITEUR DE PLANNING
+// ─────────────────────────────────────────────
+function openScheduleEditor(weekDateStr) {
+  // weekDateStr = null (nouveau) ou "YYYY-MM-DD" (existant)
+  editingSchedObj = weekDateStr ? schedules.find(x => localDateOf(x.week_start_date) === weekDateStr) : null;
+
+  if (editingSchedObj) {
+    const p = editingSchedObj.payload;
+    schedEditor.weekStartDate = localDateOf(editingSchedObj.week_start_date);
+    schedEditor.weekType      = editingSchedObj.week_type;
+    schedEditor.hideSaturday  = p.hideSaturday || false;
+    schedEditor.dayStatuses   = STATUS_KEYS.map(k => p[k] || '');
+  } else {
+    // Par défaut : prochain lundi
+    const d   = new Date(); d.setHours(0, 0, 0, 0);
+    const dow = d.getDay(); // 0=Dim
+    const off = [1, 7, 6, 5, 4, 3, 2];
+    d.setDate(d.getDate() + off[dow]);
+    schedEditor.weekStartDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    schedEditor.weekType      = 'Matin';
+    schedEditor.hideSaturday  = false;
+    schedEditor.dayStatuses   = ['', '', '', '', '', ''];
+  }
+
+  // Initialiser les affectations avec tous les visas connus
+  schedEditor.assignments = {};
+  adminVisas.forEach(v => { schedEditor.assignments[v.identifier] = ['', '', '', '', '', '']; });
+
+  // Charger les affectations existantes
+  if (editingSchedObj) {
+    CATS.forEach(cat => {
+      cat.visas(editingSchedObj.payload).forEach((arr, di) => {
+        arr.forEach(visa => {
+          if (!schedEditor.assignments[visa]) schedEditor.assignments[visa] = ['', '', '', '', '', ''];
+          schedEditor.assignments[visa][di] = cat.key;
+        });
+      });
+    });
+  }
+
+  document.getElementById('sched-editor-title').textContent = editingSchedObj ? 'Modifier le planning' : 'Nouveau planning';
+  renderScheduleEditorBody();
+  document.getElementById('sched-editor-sheet').classList.add('open');
+}
+
+function closeScheduleEditor() {
+  document.getElementById('sched-editor-sheet').classList.remove('open');
+}
+function closeSchedEditorIfBackdrop(ev) {
+  if (ev.target === document.getElementById('sched-editor-sheet')) closeScheduleEditor();
+}
+
+function renderScheduleEditorBody() {
+  const dayCount  = schedEditor.hideSaturday ? 5 : 6;
+  const dayNames  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'].slice(0, dayCount);
+  const catOpts   = ['', 'ZAC1', 'ZAC2', 'Vérif', 'Formation', 'Congés', 'Maladie'];
+  const statOpts  = ['', 'Fermé', 'Férié'];
+  const visaList  = Object.keys(schedEditor.assignments).sort();
+
+  let html = `
+    <!-- Paramètres semaine -->
+    <div class="form-row" style="margin-bottom:10px">
+      <div class="form-field">
+        <label>Début (lundi)</label>
+        <input type="date" value="${schedEditor.weekStartDate}"
+          onchange="schedEditor.weekStartDate=this.value"
+          style="border:none;background:transparent;font-size:15px;color:var(--blue);outline:none;text-align:right" />
+      </div>
+      <div class="form-field">
+        <label>Type</label>
+        <select onchange="schedEditor.weekType=this.value"
+          style="border:none;background:transparent;font-size:15px;color:var(--blue);outline:none">
+          <option value="Matin"${schedEditor.weekType==='Matin'?' selected':''}>🌅 Matin</option>
+          <option value="Après-midi"${schedEditor.weekType==='Après-midi'?' selected':''}>🌆 Après-midi</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>Sans samedi</label>
+        <input type="checkbox" ${schedEditor.hideSaturday?'checked':''}
+          onchange="schedEditor.hideSaturday=this.checked;renderScheduleEditorBody()"
+          style="width:20px;height:20px;accent-color:var(--blue)" />
+      </div>
+    </div>
+
+    <!-- Statuts des jours -->
+    <div class="section-header" style="margin-top:2px">Statut des jours</div>
+    <div class="form-row" style="margin-bottom:10px">
+      ${dayNames.map((d, i) => `
+        <div class="form-field">
+          <label>${d}</label>
+          <select onchange="schedEditor.dayStatuses[${i}]=this.value"
+            style="border:none;background:transparent;font-size:13px;color:var(--blue);outline:none">
+            ${statOpts.map(s => `<option value="${s}"${schedEditor.dayStatuses[i]===s?' selected':''}>${s||'Normal'}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+    </div>
+
+    <!-- Affectations par visa -->
+    <div class="section-header" style="margin-top:2px">Affectations</div>`;
+
+  if (!visaList.length) {
+    html += `<p style="color:var(--secondary);text-align:center;padding:16px 0;font-size:14px">Aucun membre — ajoutez des membres d'abord</p>`;
+  } else {
+    html += `
+      <div class="table-wrap" style="margin-bottom:12px;border-radius:10px;overflow:hidden;border:1px solid var(--sep)">
+        <table style="border-collapse:collapse;width:100%;font-size:12px;min-width:${50 + dayCount * 88}px">
+          <thead>
+            <tr style="background:var(--bg-alt)">
+              <th style="padding:7px 10px;text-align:left;font-weight:600;color:var(--secondary);min-width:50px;position:sticky;left:0;background:var(--bg-alt)">Visa</th>
+              ${dayNames.map(d => `<th style="padding:7px 4px;text-align:center;font-weight:600;color:var(--secondary);min-width:88px">${d}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${visaList.map((visa, ri) => `
+              <tr style="border-top:1px solid var(--sep);background:${ri%2?'var(--bg-alt)':'transparent'}">
+                <td style="padding:5px 10px;font-weight:700;position:sticky;left:0;background:${ri%2?'var(--bg-alt)':'var(--card)'}">${visa}</td>
+                ${Array.from({length: dayCount}, (_, di) => `
+                  <td style="padding:4px 3px;text-align:center">
+                    <select onchange="schedEditor.assignments['${visa}'][${di}]=this.value"
+                      style="border:1px solid var(--sep);border-radius:6px;background:var(--card);color:var(--text);font-size:11px;padding:3px 2px;width:100%;max-width:84px">
+                      ${catOpts.map(c => `<option value="${c}"${schedEditor.assignments[visa]?.[di]===c?' selected':''}>${c||'—'}</option>`).join('')}
+                    </select>
+                  </td>`).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  html += `<div id="sched-editor-error" style="color:var(--red);font-size:14px;text-align:center;min-height:18px;margin-bottom:4px"></div>`;
+  document.getElementById('sched-editor-body').innerHTML = html;
+}
+
+function buildSchedulePayload() {
+  const prefixes = ['monday','tuesday','wednesday','thursday','friday','saturday'];
+  const catMap   = {
+    'ZAC1':'ZAC1','ZAC2':'ZAC2','Vérif':'Verif',
+    'Formation':'Formation','Congés':'Conges','Maladie':'Maladie'
+  };
+  const payload = { hideSaturday: schedEditor.hideSaturday };
+  prefixes.forEach((p, i) => { payload[p + 'Status'] = schedEditor.dayStatuses[i] || ''; });
+  prefixes.forEach(p => { Object.values(catMap).forEach(k => { payload[p + k] = []; }); });
+  Object.entries(schedEditor.assignments).forEach(([visa, days]) => {
+    days.forEach((cat, di) => {
+      if (cat && catMap[cat]) payload[prefixes[di] + catMap[cat]].push(visa);
+    });
+  });
+  return payload;
+}
+
+async function saveScheduleEditor() {
+  const btn = document.getElementById('sched-editor-save-btn');
+  btn.disabled = true;
+
+  const payload = buildSchedulePayload();
+  // Conserver la date ISO d'origine si édition, sinon créer
+  const isoDate = editingSchedObj
+    ? editingSchedObj.week_start_date
+    : new Date(schedEditor.weekStartDate + 'T12:00:00').toISOString();
+
+  const body = { week_start_date: isoDate, week_type: schedEditor.weekType, payload };
+  const ok   = await sbUpsert('week_schedules', body);
+
+  if (ok) {
+    const idx = schedules.findIndex(s => localDateOf(s.week_start_date) === schedEditor.weekStartDate);
+    if (idx >= 0) schedules[idx] = body;
+    else { schedules.unshift(body); schedules.sort((a, b) => new Date(b.week_start_date) - new Date(a.week_start_date)); }
+    closeScheduleEditor();
+    renderAdmin();
+    discordLog({
+      title: editingSchedObj ? '📅 Planning modifié' : '📅 Planning créé',
+      description: `Semaine du ${schedEditor.weekStartDate} — ${schedEditor.weekType}`,
+      color: 5763719, visa: myVisa
+    });
+  } else {
+    document.getElementById('sched-editor-error').textContent = "Erreur d'enregistrement";
+    btn.disabled = false;
+  }
+}
+
+// ─────────────────────────────────────────────
 //  HELPERS
 // ─────────────────────────────────────────────
 function emptyState(title, sub) {
@@ -891,11 +1519,23 @@ function sectionHeader(txt) { return `<div class="section-header">${txt}</div>`;
 window.addEventListener('DOMContentLoaded', () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
 
+  loadOfflineQueue();
+  updateOfflineIndicator();
+
+  // Offline / online events
+  window.addEventListener('online',  () => { updateOfflineIndicator(); processOfflineQueue(); });
+  window.addEventListener('offline', updateOfflineIndicator);
+
   ['login-visa', 'login-pass'].forEach(id => {
     document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
   });
 
-  // Synchronise l'état du toggle avec localStorage
+  // Admin login via Entrée
+  document.getElementById('admin-pass-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleAdminLogin();
+  });
+
+  // Dark mode
   if (localStorage.getItem('darkMode') === '1') {
     document.getElementById('dark-mode-toggle').checked = true;
   }
