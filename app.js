@@ -404,7 +404,15 @@ function renderPlanning() {
   const el = document.getElementById('tab-planning');
   if (!schedules.length) { el.innerHTML = emptyState('Aucun planning', 'Aucun planning disponible'); return; }
   const relevant = schedules.find(isRelevant);
-  const others   = schedules.filter(s => !isRelevant(s));
+  const now      = new Date();
+  // Trier : les semaines les plus proches de maintenant d'abord
+  const others   = schedules
+    .filter(s => !isRelevant(s))
+    .sort((a, b) => {
+      const da = Math.abs(new Date(a.week_start_date) - now);
+      const db = Math.abs(new Date(b.week_start_date) - now);
+      return da - db;
+    });
   let html = '';
   if (relevant) { html += sectionHeader(new Date().getDay() === 0 ? 'Semaine prochaine' : 'Cette semaine'); html += scheduleCard(relevant); }
   if (others.length) { html += sectionHeader('Autres semaines'); others.forEach(s => { html += scheduleCard(s); }); }
