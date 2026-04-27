@@ -1,9 +1,15 @@
-const CACHE = 'suivi-v3';
+const CACHE = 'suivi-v4';
 const ASSETS = ['./', './index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
-  self.skipWaiting();
+  // Do NOT skipWaiting automatically — wait for explicit SKIP_WAITING message
+  // so the update banner can inform the user first.
+});
+
+// Allow the page to trigger activation on demand
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {

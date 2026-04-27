@@ -106,24 +106,55 @@ function saveOfflineQueue() {
   updateOfflineIndicator();
 }
 
+function showUpdateBar() {
+  const bar = document.getElementById('update-bar');
+  if (!bar) return;
+  bar.style.display = 'flex';
+  bar.innerHTML = `<span>🆕 Mise à jour disponible</span>`
+    + `<button onclick="applyUpdate()" style="margin-left:auto;background:rgba(0,0,0,.2);border:none;color:#fff;font-size:12px;font-weight:600;padding:3px 10px;border-radius:8px;cursor:pointer;">Recharger</button>`;
+}
+
+function applyUpdate() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (reg && reg.waiting) {
+        reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      } else {
+        window.location.reload();
+      }
+    });
+  } else {
+    window.location.reload();
+  }
+}
+
 function updateOfflineIndicator() {
-  const bar   = document.getElementById('offline-bar');
-  const count = document.getElementById('offline-count');
+  const bar = document.getElementById('offline-bar');
   if (!bar) return;
   const isOffline = !navigator.onLine;
   const hasQueue  = offlineQueue.length > 0;
   bar.style.display = (isOffline || hasQueue) ? 'flex' : 'none';
-  if (isOffline && hasQueue)
-    bar.textContent = `📶 Hors ligne — ${offlineQueue.length} saisie(s) en attente de synchronisation`;
-  else if (isOffline)
-    bar.textContent = '📶 Hors ligne — les nouvelles saisies seront mises en file d\'attente';
-  else if (hasQueue)
-    bar.textContent = `🔄 Synchronisation de ${offlineQueue.length} saisie(s)…`;
+  if (isOffline && hasQueue) {
+    bar.innerHTML = `<span>📶 Hors ligne — ${offlineQueue.length} saisie(s) en attente de synchronisation</span>`;
+  } else if (isOffline) {
+    bar.innerHTML = `<span>📶 Hors ligne — les nouvelles saisies seront mises en file d'attente</span>`;
+  } else if (hasQueue) {
+    bar.innerHTML = `<span>🔄 ${offlineQueue.length} saisie(s) en attente</span>`
+      + `<button onclick="processOfflineQueue()" style="margin-left:auto;background:rgba(0,0,0,.2);border:none;color:#fff;font-size:12px;font-weight:600;padding:3px 10px;border-radius:8px;cursor:pointer;">Synchroniser</button>`;
+  }
 }
 
+let _syncInProgress = false;
 async function processOfflineQueue() {
-  updateOfflineIndicator();
-  if (!navigator.onLine || !offlineQueue.length) return;
+  if (_syncInProgress) return;
+  if (!navigator.onLine || !offlineQueue.length) { updateOfflineIndicator(); return; }
+  _syncInProgress = true;
+
+  // Show "in progress" state
+  const bar = document.getElementById('offline-bar');
+  if (bar) bar.innerHTML = `<span>🔄 Synchronisation de ${offlineQueue.length} saisie(s)…</span>`;
+  bar.style.display = 'flex';
+
   const toProcess = [...offlineQueue];
   offlineQueue = [];
   saveOfflineQueue();
@@ -141,6 +172,7 @@ async function processOfflineQueue() {
     }
   }
   offlineQueue = failed;
+  _syncInProgress = false;
   saveOfflineQueue();
   if (currentTab === 'entry') renderEntryTab();
 }
@@ -1573,7 +1605,28 @@ function sectionHeader(txt) { return `<div class="section-header">${txt}</div>`;
 //  INIT
 // ─────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      // Detect when a new service worker is waiting
+      function checkForUpdate(reg) {
+        if (reg.waiting) { showUpdateBar(); return; }
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar();
+          });
+        });
+      }
+      checkForUpdate(reg);
+      // Poll every 30 min to check for updates
+      setInterval(() => reg.update(), 30 * 60 * 1000);
+    });
+    // When a new SW takes control, reload the page automatically
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) { refreshing = true; window.location.reload(); }
+    });
+  }
 
   loadOfflineQueue();
   updateOfflineIndicator();
@@ -1581,6 +1634,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Offline / online events
   window.addEventListener('online',  () => { updateOfflineIndicator(); processOfflineQueue(); });
   window.addEventListener('offline', updateOfflineIndicator);
+
+  // Periodic retry every 15s when online and queue has items
+  setInterval(() => { if (navigator.onLine && offlineQueue.length) processOfflineQueue(); }, 15000);
 
   ['login-visa', 'login-pass'].forEach(id => {
     document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') handleLogin(); });
