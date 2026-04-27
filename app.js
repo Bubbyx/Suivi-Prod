@@ -1051,7 +1051,7 @@ function renderStats() {
         <div class="cal-strip-sep"></div>
         <div class="cal-strip-item"><div class="cal-strip-val">${avgPerDay}</div><div class="cal-strip-lbl">Moy/jour</div></div>
         <div class="cal-strip-sep"></div>
-        <div class="cal-strip-item"><div class="cal-strip-val" style="color:${mColor}">${mRate.toFixed(1)}%</div><div class="cal-strip-lbl">Rebuts</div></div>
+        <div class="cal-strip-item"><div class="cal-strip-val" style="color:${mColor}">${(100-mRate).toFixed(1)}%</div><div class="cal-strip-lbl">Réussite</div></div>
       </div>`;
   }
 
