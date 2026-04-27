@@ -275,6 +275,7 @@ function logout() {
   discordLog({ title: '🚪 Déconnexion', description: `**Visa:** ${myVisa}`, color: 9807270, visa: myVisa });
   myVisa = ''; schedules = []; productModels = []; myEntries = [];
   isAdminMode = false;
+  updateAdminLockBtn();
   const adminBtn = document.getElementById('nav-admin-btn');
   if (adminBtn) adminBtn.style.display = 'none';
   localStorage.removeItem('myVisa');
@@ -1018,6 +1019,30 @@ function logoutBtn() {
 // ─────────────────────────────────────────────
 //  ADMIN — ACCÈS
 // ─────────────────────────────────────────────
+function updateAdminLockBtn() {
+  const btn = document.getElementById('admin-lock-btn');
+  if (!btn) return;
+  if (isAdminMode) {
+    btn.textContent = '🔓';
+    btn.title       = 'Quitter le mode admin';
+    btn.style.opacity = '1';
+    btn.style.color   = 'var(--orange)';
+  } else {
+    btn.textContent = '🔒';
+    btn.title       = 'Mode admin';
+    btn.style.opacity = '0.4';
+    btn.style.color   = '';
+  }
+}
+
+function handleAdminLockBtn() {
+  if (isAdminMode) {
+    if (confirm('Quitter le mode admin ?')) exitAdminMode();
+  } else {
+    openAdminLoginSheet();
+  }
+}
+
 function openAdminLoginSheet() {
   document.getElementById('admin-login-sheet').classList.add('open');
   document.getElementById('admin-pass-input').value = '';
@@ -1034,6 +1059,7 @@ function handleAdminLogin() {
   if (pw === 'admin1234') {
     isAdminMode = true;
     closeAdminLoginSheet();
+    updateAdminLockBtn();
     const btn = document.getElementById('nav-admin-btn');
     btn.style.display = 'flex';
     showTab('admin', btn);
@@ -1044,6 +1070,7 @@ function handleAdminLogin() {
 }
 function exitAdminMode() {
   isAdminMode = false;
+  updateAdminLockBtn();
   document.getElementById('nav-admin-btn').style.display = 'none';
   const firstBtn = document.querySelector('nav button:not(#nav-admin-btn)');
   showTab('planning', firstBtn);
