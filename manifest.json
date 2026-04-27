@@ -4,10 +4,10 @@
   "description": "Suivi de production EuroSilicone",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#007AFF",
-  "theme_color": "#007AFF",
+  "background_color": "#FF9500",
+  "theme_color": "#FF9500",
   "lang": "fr",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" }
   ]
 }
