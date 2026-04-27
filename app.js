@@ -740,6 +740,8 @@ function openEditSheet(id) {
 
 function closeEntrySheet() {
   document.getElementById('entry-sheet').classList.remove('open');
+  const btn = document.getElementById('sheet-save-btn');
+  if (btn) btn.disabled = false;
 }
 
 function closeEntrySheetIfBackdrop(ev) {
